@@ -1,0 +1,42 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+artifacts/
+*.nupkg
+*.snupkg
+
+# Test results
+[Tt]est[Rr]esults/
+*.trx
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+
+# IDE and user files
+.vs/
+.vscode/
+.idea/
+*.csproj.user
+*.suo
+*.userprefs
+*.DotSettings.user
+
+# Logs
+*.binlog
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Agent workspace
+.superpowers/
+
+# Local Claude Code instructions
+CLAUDE.md
+
+# Visual Studio capture working folder, kept outside the repo
+test/vs-reference/
+
+# Design notes, kept local
+docs/superpowers/

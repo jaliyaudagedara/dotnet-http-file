@@ -1,0 +1,29 @@
+# Requests that authenticate with a Microsoft Entra access token from your existing sign-in.
+# Sign in first (az login, Visual Studio, azd auth login, ...), then run, for example:
+#   dotnet http-file samples/Entra/Entra.http --name getMe --env dev
+
+@GraphUrl=https://graph.microsoft.com/v1.0
+@ArmUrl=https://management.azure.com
+
+# Your own Microsoft Graph profile. Works with an az login account; no app registration needed.
+# @name getMe
+GET {{GraphUrl}}/me?$select=displayName,userPrincipalName
+Authorization: Bearer {{GraphToken}}
+Accept: application/json
+
+###
+
+# The Azure subscriptions your sign-in can see.
+# @name listSubscriptions
+GET {{ArmUrl}}/subscriptions?api-version=2022-12-01
+Authorization: Bearer {{ArmToken}}
+Accept: application/json
+
+###
+
+# Your own API protected by Entra ID. Set MyApiToken's scope in http-client.env.json to
+# api://<your-application-id>/.default and replace the URL below.
+# @name callMyApi
+GET https://localhost:7128/api/values
+Authorization: Bearer {{MyApiToken}}
+Accept: application/json

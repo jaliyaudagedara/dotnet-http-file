@@ -1,0 +1,56 @@
+name: CI
+
+# Manual only for now. Restore push and pull_request to run it automatically.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [
+          ubuntu-latest,
+          windows-latest,
+          macos-latest
+        ]
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Build
+        run: dotnet build -c Release
+
+      - name: Check formatting
+        if: matrix.os == 'ubuntu-latest'
+        run: dotnet format --verify-no-changes
+
+      - name: Test
+        run: dotnet test -c Release --no-build
+
+      - name: Pack
+        run: dotnet pack src/dotnet-http-file -c Release -o artifacts
+
+      # The tool's file is dotnet-http-file.exe on Windows; Git Bash resolves the name without the extension.
+      - name: Check the packed tool's version
+        shell: bash
+        run: |
+          tool_path="$RUNNER_TEMP/dotnet-http-file-tool"
+          dotnet tool install dotnet-http-file --tool-path "$tool_path" --add-source artifacts --version 0.1.0
+          version="$("$tool_path/dotnet-http-file" --version | tr -d '\r')"
+          echo "dotnet-http-file --version: '$version'"
+          test "$version" = "0.1.0"

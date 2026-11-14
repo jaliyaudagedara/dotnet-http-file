@@ -1,0 +1,419 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="InvalidExpression" xml:space="preserve">
+    <value>Invalid expression '{{{{{0}}}}}'.</value>
+    <comment>{0} is the text between the double braces. The doubled braces are escapes that print as {{ and }}.</comment>
+  </data>
+  <data name="DuplicateRequestName" xml:space="preserve">
+    <value>Duplicate request name '{0}' on lines {1} and {2}.</value>
+    <comment>{0} is the request name. {1} and {2} are the request-line numbers of the two requests.</comment>
+  </data>
+  <data name="InvalidHeader" xml:space="preserve">
+    <value>Invalid header '{0}' (line {1}).</value>
+    <comment>{0} is the start of the header line, up to the first whitespace, ':' or '=' and cut after 32 characters. The rest of the line is left out because it can hold a secret. {1} is the line number.</comment>
+  </data>
+  <data name="InvalidRequestName" xml:space="preserve">
+    <value>Invalid request name '{0}' (line {1}).</value>
+    <comment>{0} is the start of the first token after @name, up to the first ':' or '=' and cut after 32 characters, or empty when there is no token. {1} is the line number.</comment>
+  </data>
+  <data name="InvalidVariableDefinition" xml:space="preserve">
+    <value>Invalid variable definition '{0}' (line {1}).</value>
+    <comment>{0} is the start of the variable line, up to the first whitespace, ':' or '=' and cut after 32 characters. The rest of the line is left out because it can hold a secret. {1} is the line number.</comment>
+  </data>
+  <data name="MessageAtLine" xml:space="preserve">
+    <value>{0} (line {1}).</value>
+    <comment>{0} is an error message without its final period. {1} is the line number it applies to.</comment>
+  </data>
+  <data name="UnknownHttpMethod" xml:space="preserve">
+    <value>Unknown HTTP method '{0}' (line {1}).</value>
+    <comment>{0} is the start of the request line, up to the first whitespace, ':' or '=' and cut after 32 characters. The rest of the line is left out because a URL can hold a key. {1} is the line number.</comment>
+  </data>
+  <data name="DotEnvVariableNotDefined" xml:space="preserve">
+    <value>'{0}' is not defined in {1}.</value>
+    <comment>{0} is the name given to $dotenv. {1} is the path of the .env file that was read.</comment>
+  </data>
+  <data name="DotEnvFileNotFound" xml:space="preserve">
+    <value>'{0}' cannot be read with $dotenv: file {1} was not found.</value>
+    <comment>{0} is the name given to $dotenv. {1} is the path where the .env file was looked for. $dotenv is literal syntax and is not translated.</comment>
+  </data>
+  <data name="DynamicVariableOffsetOutOfRange" xml:space="preserve">
+    <value>Offset '{1} {2}' for '${0}' is out of range.</value>
+    <comment>{0} is the dynamic variable name without its $. {1} is the offset amount and {2} its unit. The resulting date is outside the supported range.</comment>
+  </data>
+  <data name="EnvironmentVariableNotSet" xml:space="preserve">
+    <value>Environment variable '{0}' is not set.</value>
+    <comment>{0} is the name given to $processEnv.</comment>
+  </data>
+  <data name="InvalidDynamicVariableArguments" xml:space="preserve">
+    <value>Invalid arguments for '${0}'. Expected '{{{{{1}}}}}'.</value>
+    <comment>{0} is the dynamic variable name without its $. {1} is its full syntax, such as $randomInt [min max]. The doubled braces are escapes that print as {{ and }}.</comment>
+  </data>
+  <data name="InvalidDynamicVariableDateFormat" xml:space="preserve">
+    <value>Invalid date format '{1}' for '${0}'.</value>
+    <comment>{0} is the dynamic variable name without its $. {1} is the custom .NET date and time format string.</comment>
+  </data>
+  <data name="InvalidDynamicVariableInteger" xml:space="preserve">
+    <value>Invalid integer '{1}' for '${0}'.</value>
+    <comment>{0} is the dynamic variable name without its $. {1} is the argument that is not a 32-bit integer.</comment>
+  </data>
+  <data name="InvalidDynamicVariableOffset" xml:space="preserve">
+    <value>Invalid offset '{1} {2}' for '${0}'. Expected an integer and one of ms, s, m, h, d, w, M, y.</value>
+    <comment>{0} is the dynamic variable name without its $. {1} is the offset amount and {2} its unit. The unit list is case-sensitive syntax and is not translated.</comment>
+  </data>
+  <data name="InvalidDynamicVariableRange" xml:space="preserve">
+    <value>Invalid range for '${0}': min {1} is greater than max {2}.</value>
+    <comment>{0} is the dynamic variable name without its $. {1} and {2} are the min and max arguments as written.</comment>
+  </data>
+  <data name="UnknownDynamicVariable" xml:space="preserve">
+    <value>Unknown dynamic variable '${0}'.</value>
+    <comment>{0} is the dynamic variable name without its $.</comment>
+  </data>
+  <data name="EnvironmentFileNotFound" xml:space="preserve">
+    <value>--env {0} was given but no http-client.env.json was found above {1}.</value>
+    <comment>{0} is the environment name given to --env. {1} is the path of the .http file. --env and http-client.env.json are literal names and are not translated.</comment>
+  </data>
+  <data name="EnvironmentFileNotObject" xml:space="preserve">
+    <value>Environment file {0} must contain a JSON object.</value>
+    <comment>{0} is the path of the environment file or of its .user file.</comment>
+  </data>
+  <data name="EnvironmentNotFound" xml:space="preserve">
+    <value>Environment '{0}' not found in {1}. Available: {2}.</value>
+    <comment>{0} is the environment name given to --env. {1} is the path of the environment file. {2} is the comma-separated list of the environments that are defined.</comment>
+  </data>
+  <data name="EnvironmentNotFoundNoneDefined" xml:space="preserve">
+    <value>Environment '{0}' not found in {1}, which defines no environments.</value>
+    <comment>{0} is the environment name given to --env. {1} is the path of the environment file.</comment>
+  </data>
+  <data name="EnvironmentUnsupportedValue" xml:space="preserve">
+    <value>Environment '{0}' in {1} has an unsupported value.</value>
+    <comment>{0} is the environment name, which is not a JSON object. {1} is the path of the environment file or of its .user file.</comment>
+  </data>
+  <data name="EnvironmentVariableUnsupportedValue" xml:space="preserve">
+    <value>Variable '{0}' in {1} has an unsupported value.</value>
+    <comment>{0} is the variable name. {1} is the path of the environment file or of its .user file. The value is left out because it can hold a secret.</comment>
+  </data>
+  <data name="InvalidEnvironmentFile" xml:space="preserve">
+    <value>Environment file {0} is not valid JSON.</value>
+    <comment>{0} is the path of the environment file or of its .user file. Used when the error has no line number, as for a repeated property name. The file content is left out because it can hold a secret.</comment>
+  </data>
+  <data name="InvalidEnvironmentFileJson" xml:space="preserve">
+    <value>Environment file {0} is not valid JSON (line {1}).</value>
+    <comment>{0} is the path of the environment file or of its .user file. {1} is the line number of the error. The file content is left out because it can hold a secret.</comment>
+  </data>
+  <data name="MultipleProjectFiles" xml:space="preserve">
+    <value>More than one project file was found in {0}.</value>
+    <comment>{0} is the path of the folder that holds several .csproj files.</comment>
+  </data>
+  <data name="UnknownSecretProvider" xml:space="preserve">
+    <value>Variable '{0}' uses unknown provider '{1}'. Supported: {2}.</value>
+    <comment>{0} is the variable name. {1} is the provider name as written in the environment file. {2} is the comma-separated list of supported provider names, which are not translated.</comment>
+  </data>
+  <data name="SecretFieldMissing" xml:space="preserve">
+    <value>Variable '{0}' ({1}) is missing '{2}'.</value>
+    <comment>{0} is the variable name. {1} is the provider name. {2} is the name of the required JSON property that is absent, empty or not a string.</comment>
+  </data>
+  <data name="SecretFieldInvalid" xml:space="preserve">
+    <value>Variable '{0}' ({1}) has an invalid '{2}'. Expected a non-empty string.</value>
+    <comment>{0} is the variable name. {1} is the provider name. {2} is the name of the optional JSON property that is present but empty or not a string. A string in the wrong shape has its own message. The value is left out.</comment>
+  </data>
+  <data name="EntraAccessTokenInvalidScope" xml:space="preserve">
+    <value>Variable '{0}' (EntraAccessToken) has an invalid 'scope'. Expected a single scope made of letters, digits and . - : _ / (for example api://my-api/.default).</value>
+    <comment>{0} is the variable name. scope is a literal JSON property name and is not translated. The value is left out because it would be printed to the terminal as written.</comment>
+  </data>
+  <data name="EntraAccessTokenInvalidTenantId" xml:space="preserve">
+    <value>Variable '{0}' (EntraAccessToken) has an invalid 'tenantId'. Expected a tenant ID (GUID) or a domain name.</value>
+    <comment>{0} is the variable name. tenantId is a literal JSON property name and is not translated. The value is left out because it would be printed to the terminal as written.</comment>
+  </data>
+  <data name="EntraAccessTokenFailed" xml:space="preserve">
+    <value>{0} (EntraAccessToken): could not get an access token.{5}  scope:  {1}{5}  tenant: {2}{5}  tried:  {3}{5}  fix:    {4}</value>
+    <comment>{0} is the variable name. {1} is the scope. {2} is the tenant ID, or the EntraAccessTokenDefaultTenant text. {3} is the message of the credential failure. {4} is the command that fixes it. {5} is the line break. The labels are padded so the values line up; keep the two leading spaces and the alignment.</comment>
+  </data>
+  <data name="EntraAccessTokenDefaultTenant" xml:space="preserve">
+    <value>default</value>
+    <comment>Shown on the tenant line of EntraAccessTokenFailed when the variable names no tenant.</comment>
+  </data>
+  <data name="KeyVaultInvalidResourceId" xml:space="preserve">
+    <value>Variable '{0}' (AzureKeyVault): 'resourceId' does not end with a valid vault name.</value>
+    <comment>{0} is the variable name. resourceId is a literal JSON property name and is not translated.</comment>
+  </data>
+  <data name="KeyVaultSecretNotFound" xml:space="preserve">
+    <value>Variable '{0}' (AzureKeyVault): secret '{2}' was not found in vault '{1}' (404).</value>
+    <comment>{0} is the variable name. {1} is the vault name. {2} is the secret name.</comment>
+  </data>
+  <data name="KeyVaultForbidden" xml:space="preserve">
+    <value>Variable '{0}' (AzureKeyVault): access to secret '{2}' in vault '{1}' was forbidden (403). Check that your account can read secrets in this vault.</value>
+    <comment>{0} is the variable name. {1} is the vault name. {2} is the secret name.</comment>
+  </data>
+  <data name="KeyVaultRequestFailed" xml:space="preserve">
+    <value>Variable '{0}' (AzureKeyVault): could not read secret '{2}' from vault '{1}' (HTTP {3}).</value>
+    <comment>{0} is the variable name. {1} is the vault name. {2} is the secret name. {3} is the HTTP status code. The service's own message is left out.</comment>
+  </data>
+  <data name="KeyVaultUnreachable" xml:space="preserve">
+    <value>Variable '{0}' (AzureKeyVault): could not reach vault '{1}' to read secret '{2}'. Check the vault name in 'resourceId' and your network connection.</value>
+    <comment>{0} is the variable name. {1} is the vault name. {2} is the secret name. Used when the request got no HTTP response. resourceId is a literal JSON property name and is not translated.</comment>
+  </data>
+  <data name="KeyVaultSignInFailed" xml:space="preserve">
+    <value>{0} (AzureKeyVault): could not sign in to read secret '{2}' from vault '{1}'.{4}  tried:  {3}{4}  fix:    az login</value>
+    <comment>{0} is the variable name. {1} is the vault name. {2} is the secret name. {3} is the message of the credential failure. {4} is the line break. az login is a command and is not translated. The layout matches EntraAccessTokenFailed, without the scope and tenant lines because the provider takes neither; keep the two leading spaces and the alignment.</comment>
+  </data>
+  <data name="UserSecretsNoProject" xml:space="preserve">
+    <value>Variable '{0}' (AspnetUserSecrets): no project file was found in {1}.</value>
+    <comment>{0} is the variable name. {1} is the folder of the environment file, which holds no .csproj file.</comment>
+  </data>
+  <data name="UserSecretsNoUserSecretsId" xml:space="preserve">
+    <value>Variable '{0}' (AspnetUserSecrets): project file {1} has no UserSecretsId.</value>
+    <comment>{0} is the variable name. {1} is the path of the .csproj file. UserSecretsId is a literal MSBuild property name and is not translated.</comment>
+  </data>
+  <data name="UserSecretsInvalidUserSecretsId" xml:space="preserve">
+    <value>Variable '{0}' (AspnetUserSecrets): project file {1} has an invalid UserSecretsId.</value>
+    <comment>{0} is the variable name. {1} is the path of the .csproj file. Used when the ID holds characters that are not allowed in a folder name. UserSecretsId is a literal MSBuild property name and is not translated.</comment>
+  </data>
+  <data name="UserSecretsInvalidProject" xml:space="preserve">
+    <value>Variable '{0}' (AspnetUserSecrets): project file {1} is not valid XML.</value>
+    <comment>{0} is the variable name. {1} is the path of the .csproj file.</comment>
+  </data>
+  <data name="UserSecretsFileNotFound" xml:space="preserve">
+    <value>Variable '{0}' (AspnetUserSecrets): user secrets file {1} was not found.</value>
+    <comment>{0} is the variable name. {1} is the path of the secrets.json file.</comment>
+  </data>
+  <data name="UserSecretsInvalidFile" xml:space="preserve">
+    <value>Variable '{0}' (AspnetUserSecrets): user secrets file {1} is not a valid JSON object.</value>
+    <comment>{0} is the variable name. {1} is the path of the secrets.json file. The file content is left out because it holds secrets.</comment>
+  </data>
+  <data name="UserSecretsSecretNotFound" xml:space="preserve">
+    <value>Variable '{0}' (AspnetUserSecrets): secret '{1}' was not found in {2}.</value>
+    <comment>{0} is the variable name. {1} is the secret name given by secretName. {2} is the path of the secrets.json file.</comment>
+  </data>
+  <data name="EncryptedWindowsOnly" xml:space="preserve">
+    <value>Variable '{0}' uses the Encrypted (DPAPI) provider, which only works on Windows.</value>
+    <comment>{0} is the variable name. Encrypted is the provider name and is not translated.</comment>
+  </data>
+  <data name="EncryptedInvalidBase64" xml:space="preserve">
+    <value>Variable '{0}' (Encrypted): 'value' is not valid base64.</value>
+    <comment>{0} is the variable name. value is a literal JSON property name and is not translated. The value itself is left out.</comment>
+  </data>
+  <data name="EncryptedCannotDecrypt" xml:space="preserve">
+    <value>Variable '{0}' (Encrypted): 'value' could not be decrypted. A DPAPI value only works for the Windows user and machine that encrypted it.</value>
+    <comment>{0} is the variable name. value is a literal JSON property name and is not translated. The value itself is left out.</comment>
+  </data>
+  <data name="ReferenceNoContentAtPath" xml:space="preserve">
+    <value>The named request does not contain any content at this path '{0}'.</value>
+    <comment>{0} is the reference expression, such as login.response.body.$.token. The wording matches Visual Studio's HTTP0028 error.</comment>
+  </data>
+  <data name="ReferenceBodyNotJson" xml:space="preserve">
+    <value>'{0}' {1} body is not JSON.</value>
+    <comment>{0} is the request name. {1} is the literal keyword request or response from the reference and is not translated. The body is left out because it may hold secrets.</comment>
+  </data>
+  <data name="ReferenceBodyDuplicateProperties" xml:space="preserve">
+    <value>'{0}' {1} body has a JSON object with a repeated property name, which a JSONPath cannot read.</value>
+    <comment>{0} is the request name. {1} is the literal keyword request or response from the reference and is not translated. The body is left out because it may hold secrets.</comment>
+  </data>
+  <data name="ReferenceBodyInvalidUnicode" xml:space="preserve">
+    <value>'{0}' {1} body has JSON text that is not valid Unicode.</value>
+    <comment>{0} is the request name. {1} is the literal keyword request or response from the reference and is not translated. Used when a JSON string holds an escaped surrogate without its pair. The body is left out because it may hold secrets.</comment>
+  </data>
+  <data name="ReferenceInvalidJsonPath" xml:space="preserve">
+    <value>Invalid JSONPath '{0}' in '{1}'.</value>
+    <comment>{0} is the JSONPath. {1} is the whole reference expression. Also used when a filter function in the path fails, for example on a regular expression that is not valid.</comment>
+  </data>
+  <data name="ReferenceBodyNotXml" xml:space="preserve">
+    <value>'{0}' {1} body is not well-formed XML. A body with a DOCTYPE is not supported.</value>
+    <comment>{0} is the request name. {1} is the literal keyword request or response from the reference and is not translated. The body is left out because it may hold secrets.</comment>
+  </data>
+  <data name="ReferenceInvalidXPath" xml:space="preserve">
+    <value>Invalid XPath '{0}' in '{1}'. Namespace prefixes, variables and XSLT functions are not supported.</value>
+    <comment>{0} is the XPath. {1} is the whole reference expression. XSLT is a name and is not translated.</comment>
+  </data>
+  <data name="ReferenceXPathMultipleNodes" xml:space="preserve">
+    <value>XPath '{0}' matched {1} nodes; expected one.</value>
+    <comment>{0} is the XPath. {1} is the number of matched nodes, always two or more.</comment>
+  </data>
+  <data name="ReferenceHeaderNotFound" xml:space="preserve">
+    <value>'{0}' {1} has no '{2}' header.</value>
+    <comment>{0} is the request name. {1} is the literal keyword request or response from the reference and is not translated. {2} is the header name.</comment>
+  </data>
+  <data name="ReferenceAllHeadersUnsupported" xml:space="preserve">
+    <value>'{0}' is not supported. Name one header, as in 'headers.Content-Type'.</value>
+    <comment>{0} is the reference expression, which ends in headers.*. headers.Content-Type is literal syntax and is not translated.</comment>
+  </data>
+  <data name="ReferenceUnsupportedBodySelector" xml:space="preserve">
+    <value>'{0}' is not supported. After 'body.' use '*', a JSONPath starting with '$' or an XPath starting with '/'.</value>
+    <comment>{0} is the reference expression. body. is literal syntax and is not translated.</comment>
+  </data>
+  <data name="VariableNotDefined" xml:space="preserve">
+    <value>Variable '{0}' is not defined (line {1}).</value>
+    <comment>{0} is the variable name. {1} is the line number of the expression that uses it.</comment>
+  </data>
+  <data name="VariableNotDefinedNoEnvironment" xml:space="preserve">
+    <value>Variable '{0}' is not defined (line {1}). No environment selected; available: {2}. Pass --env &lt;name&gt;.</value>
+    <comment>{0} is the variable name. {1} is the line number of the expression that uses it. {2} is the comma-separated list of the environments that are defined. --env is a literal option name and is not translated.</comment>
+  </data>
+  <data name="UrlNotAbsolute" xml:space="preserve">
+    <value>'{0}' is not an absolute http or https URL (line {1}).</value>
+    <comment>{0} is the URL after variable substitution, with provider-resolved values shown as ***. {1} is the line number of the request line.</comment>
+  </data>
+  <data name="RequestNotSent" xml:space="preserve">
+    <value>Request '{0}' has not been sent.</value>
+    <comment>{0} is the name of a request that a reference reads before the request was sent.</comment>
+  </data>
+  <data name="RequestNotFound" xml:space="preserve">
+    <value>Request '{0}' referenced on line {1} does not exist.</value>
+    <comment>{0} is the request name used in a reference. {1} is the line number of the reference.</comment>
+  </data>
+  <data name="RequestDependencyCycle" xml:space="preserve">
+    <value>Request dependency cycle: {0}.</value>
+    <comment>{0} is the request names of the cycle joined with ' -> ', starting and ending with the same name.</comment>
+  </data>
+  <data name="ContentHeaderWithoutBody" xml:space="preserve">
+    <value>Header '{0}' ignored: a request without a body cannot have content headers (line {1}).</value>
+    <comment>{0} is the header name, such as Content-Type. {1} is the line number of the header. A warning; the wording follows Visual Studio's HTTP0009. The header value is left out because it can hold a secret.</comment>
+  </data>
+  <data name="HeaderNotSendable" xml:space="preserve">
+    <value>Header '{0}' is not a valid HTTP header and cannot be sent (line {1}).</value>
+    <comment>{0} is the header name. {1} is the line number of the header. The header value is left out because it can hold a secret.</comment>
+  </data>
+  <data name="HeaderValueHasLineBreak" xml:space="preserve">
+    <value>Header '{0}' has a value that contains a line break and cannot be sent (line {1}).</value>
+    <comment>{0} is the header name. {1} is the line number of the header. Also used for a null character in the value. The header value is left out because it can hold a secret.</comment>
+  </data>
+  <data name="UnsupportedHttpVersion" xml:space="preserve">
+    <value>'{0}' is not a supported HTTP version. Use HTTP/1.0, HTTP/1.1, HTTP/2 or HTTP/3.</value>
+    <comment>{0} is the version written at the end of the request line, such as HTTP/9. HTTP/1.0, HTTP/1.1, HTTP/2 and HTTP/3 are literal syntax and are not translated.</comment>
+  </data>
+  <data name="SendFailed" xml:space="preserve">
+    <value>Could not send {0} {1}: {2}</value>
+    <comment>{0} is the HTTP method. {1} is the URL, with provider-resolved values shown as ***. {2} is the message of the network failure, which ends with its own punctuation.</comment>
+  </data>
+  <data name="SendFailedCertificateNotTrusted" xml:space="preserve">
+    <value>Could not send {0} {1}: {2} The server certificate was not trusted. Pass --insecure to skip certificate validation.</value>
+    <comment>{0} is the HTTP method. {1} is the URL, with provider-resolved values shown as ***. {2} is the message of the TLS failure, which ends with its own punctuation. --insecure is a literal option name and is not translated.</comment>
+  </data>
+  <data name="Redirected" xml:space="preserve">
+    <value>Redirected to {0} ({1})</value>
+    <comment>{0} is the URL a redirect leads to, with provider-resolved values shown as ***. {1} is the status code of the redirect, such as 302. Written to standard error once for each redirect that is followed.</comment>
+  </data>
+  <data name="SendTimedOut" xml:space="preserve">
+    <value>{0} {1} timed out after {2} s.</value>
+    <comment>{0} is the HTTP method. {1} is the URL, with provider-resolved values shown as ***. {2} is the timeout in seconds; s is the unit symbol.</comment>
+  </data>
+  <data name="BinaryBodySummary" xml:space="preserve">
+    <value>(binary body, {0}, {1}; use --show body to write it)</value>
+    <comment>{0} is the body size with its unit, such as 1.5 KB. {1} is the Content-Type value of the response. Shown in place of a body that is not text. --show body is a literal option with its value and is not translated.</comment>
+  </data>
+  <data name="BinaryBodySummaryNoContentType" xml:space="preserve">
+    <value>(binary body, {0}; use --show body to write it)</value>
+    <comment>{0} is the body size with its unit, such as 1.5 KB. Used when the response has no Content-Type. --show body is a literal option with its value and is not translated.</comment>
+  </data>
+  <data name="BodyContainsSecret" xml:space="preserve">
+    <value>the response body contains a secret value from this run; it is written unmasked.</value>
+    <comment>A warning, shown after "warning: " when the response body is written as received and holds a value that came from a secret provider.</comment>
+  </data>
+  <data name="OutputError" xml:space="preserve">
+    <value>error: {0}</value>
+    <comment>{0} is the error message, which ends with its own punctuation.</comment>
+  </data>
+  <data name="OutputWarning" xml:space="preserve">
+    <value>warning: {0}</value>
+    <comment>{0} is the warning message, which ends with its own punctuation.</comment>
+  </data>
+  <data name="CommandDescription" xml:space="preserve">
+    <value>Runs a request from a Visual Studio .http file.</value>
+    <comment>The description of the tool at the top of the --help output. .http is a file extension and is not translated.</comment>
+  </data>
+  <data name="FileArgumentDescription" xml:space="preserve">
+    <value>The .http or .rest file that holds the request.</value>
+    <comment>The --help description of the file argument. .http and .rest are file extensions and are not translated.</comment>
+  </data>
+  <data name="NameOptionDescription" xml:space="preserve">
+    <value>The request to run, as named by '# @name &lt;name&gt;' in the file.</value>
+    <comment>The --help description of --name. # @name is literal .http syntax and is not translated.</comment>
+  </data>
+  <data name="EnvOptionDescription" xml:space="preserve">
+    <value>The environment in http-client.env.json to take variables from.</value>
+    <comment>The --help description of --env. http-client.env.json is a file name and is not translated.</comment>
+  </data>
+  <data name="VerboseOptionDescription" xml:space="preserve">
+    <value>Same as --show full.</value>
+    <comment>The --help description of --verbose. --show full is a literal option with its value and is not translated.</comment>
+  </data>
+  <data name="ShowOptionDescription" xml:space="preserve">
+    <value>What to print: full (request, status, headers and formatted body, with secrets masked), headers (status line and response headers, masked), status (status line only), or body (the response bytes as received, not masked, control characters not neutralised). Default: full in a terminal, body when the output is piped or redirected.</value>
+    <comment>The --help description of --show. full, headers, status and body are literal option values and are not translated.</comment>
+  </data>
+  <data name="InsecureOptionDescription" xml:space="preserve">
+    <value>Skip server certificate validation.</value>
+    <comment>The --help description of --insecure.</comment>
+  </data>
+  <data name="VerboseAndShowTogether" xml:space="preserve">
+    <value>--verbose and --show cannot be used together.</value>
+    <comment>--verbose and --show are literal option names and are not translated.</comment>
+  </data>
+  <data name="FileNotFound" xml:space="preserve">
+    <value>File '{0}' was not found.</value>
+    <comment>{0} is the path given on the command line, which does not exist or is a folder.</comment>
+  </data>
+  <data name="UnrecognizedOption" xml:space="preserve">
+    <value>Unrecognized option '{0}'.</value>
+    <comment>{0} is a command-line token that starts with '-', stands where the file is expected and names no file.</comment>
+  </data>
+  <data name="FileExtensionNotSupported" xml:space="preserve">
+    <value>File '{0}' must have the extension .http or .rest.</value>
+    <comment>{0} is the path given on the command line. .http and .rest are file extensions and are not translated.</comment>
+  </data>
+  <data name="FileReadFailed" xml:space="preserve">
+    <value>Could not read a file: {0}</value>
+    <comment>{0} is the operating system's message for the failed read, which names the path and ends with its own punctuation. The file content is never part of it.</comment>
+  </data>
+  <data name="RequestNameNotFound" xml:space="preserve">
+    <value>No request named '{0}' in {1}. Named requests: {2}.</value>
+    <comment>{0} is the name given to --name. {1} is the path of the .http file. {2} is the comma-separated list of request names in the file.</comment>
+  </data>
+  <data name="RequestNameNotFoundNoneNamed" xml:space="preserve">
+    <value>No request named '{0}' in {1}, which has no named requests.</value>
+    <comment>{0} is the name given to --name. {1} is the path of the .http file.</comment>
+  </data>
+  <data name="MultipleRequestsNoName" xml:space="preserve">
+    <value>{0} has {1} requests; pick one with --name. Named requests: {2}. Requests without a name can't be picked from a script; add '# @name &lt;name&gt;' above them.</value>
+    <comment>{0} is the path of the .http file. {1} is the number of requests, always two or more. {2} is the comma-separated list of request names. --name and # @name are literal and are not translated.</comment>
+  </data>
+  <data name="MultipleRequestsNoneNamed" xml:space="preserve">
+    <value>{0} has {1} requests and none has a name; add '# @name &lt;name&gt;' above one and pick it with --name.</value>
+    <comment>{0} is the path of the .http file. {1} is the number of requests, always two or more. --name and # @name are literal and are not translated.</comment>
+  </data>
+  <data name="NoRequests" xml:space="preserve">
+    <value>{0} has no requests.</value>
+    <comment>{0} is the path of the .http file.</comment>
+  </data>
+  <data name="NoRequestSelected" xml:space="preserve">
+    <value>No request was selected.</value>
+    <comment>Shown when the interactive request picker is closed without a choice.</comment>
+  </data>
+  <data name="DependencyFailed" xml:space="preserve">
+    <value>Dependency '{0}' returned {1}; '{2}' was not sent.</value>
+    <comment>{0} is the name of the request that was sent first. {1} is its status code and reason phrase, such as 404 Not Found. {2} is the name of the selected request, or its method and URL when it has no name.</comment>
+  </data>
+  <data name="Cancelled" xml:space="preserve">
+    <value>cancelled</value>
+    <comment>Shown after 'error: ' when the run is stopped with Ctrl+C.</comment>
+  </data>
+  <data name="UnexpectedError" xml:space="preserve">
+    <value>unexpected {0}: {1}</value>
+    <comment>Shown after 'error: ' for a failure the tool did not foresee. {0} is the .NET exception type name. {1} is the exception message, or for an AggregateException the comma-separated type names of the exceptions it holds.</comment>
+  </data>
+  <data name="PickerTitle" xml:space="preserve">
+    <value>Select a request to run</value>
+    <comment>The title of the interactive request picker. Square brackets are not allowed here.</comment>
+  </data>
+</root>

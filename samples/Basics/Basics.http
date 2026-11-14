@@ -1,0 +1,20 @@
+@BaseUrl=https://jsonplaceholder.typicode.com
+
+# @name getToDos
+GET {{BaseUrl}}/todos?_limit=3
+
+###
+
+# @name createToDo
+POST {{BaseUrl}}/todos
+Content-Type: application/json
+
+{
+    "title": "Try dotnet http-file",
+    "completed": false
+}
+
+###
+
+# @name getToDo
+GET {{BaseUrl}}/todos/{{createToDo.response.body.$.id}}

@@ -1,0 +1,321 @@
+using System.Buffers;
+using System.Globalization;
+using System.Text;
+using DotNetHttpFile.Execution;
+using DotNetHttpFile.Parsing;
+using DotNetHttpFile.Resolution;
+using Spectre.Console;
+using Spectre.Console.Rendering;
+
+namespace DotNetHttpFile.Output;
+
+/// <summary>
+/// Writes exchanges, warnings and errors to the console. Everything it displays goes through the secret mask
+/// and has its control characters made visible; only the response bytes of <see cref="OutputMode.Body"/> are
+/// written as received, with a warning when they hold a secret.
+/// </summary>
+internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secretMask, OutputMode mode)
+{
+    private const string AuthorizationHeader = "Authorization";
+    private const string ProxyAuthorizationHeader = "Proxy-Authorization";
+    private const string CookieHeader = "Cookie";
+    private const int VersionFieldCount = 2;
+    private const string ControlCharacterPrefix = @"\x";
+    private const string ControlCharacterFormat = "X2";
+    private const int HexDigitCount = 2;
+    private const int BytesPerKilobyte = 1024;
+    private const int BytesPerMegabyte = BytesPerKilobyte * BytesPerKilobyte;
+
+    // The characters of an RFC 9110 token, which is what an authentication scheme is made of.
+    private static readonly SearchValues<char> s_tokenCharacters = SearchValues.Create(
+        "!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
+
+    private static readonly CompositeFormat s_binaryBodySummaryFormat =
+        CompositeFormat.Parse(Resources.BinaryBodySummary);
+
+    private static readonly CompositeFormat s_binaryBodySummaryNoContentTypeFormat =
+        CompositeFormat.Parse(Resources.BinaryBodySummaryNoContentType);
+
+    private static readonly CompositeFormat s_outputErrorFormat = CompositeFormat.Parse(Resources.OutputError);
+
+    private static readonly CompositeFormat s_outputWarningFormat = CompositeFormat.Parse(Resources.OutputWarning);
+
+    private static readonly Style s_successStyle = new(foreground: Color.Green);
+    private static readonly Style s_redirectStyle = new(foreground: Color.Yellow);
+    private static readonly Style s_failureStyle = new(foreground: Color.Red);
+    private static readonly Style s_warningStyle = new(foreground: Color.Yellow);
+    private static readonly Style s_dependencyStyle = new(foreground: Color.Grey);
+
+    /// <summary>
+    /// Writes the one-line summary of a request that was sent because the selected request refers to it.
+    /// </summary>
+    public void RenderDependency(RequestDefinition request, HttpExchange exchange)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(exchange);
+
+        ResolvedRequest sent = exchange.Request;
+        string status = StatusText(exchange.Response);
+        long milliseconds = Milliseconds(exchange.Response);
+        string line = string.Create(
+            CultureInfo.InvariantCulture,
+            $"\u2192 {request.Name}  {sent.Method} {sent.DisplayUrl}  {status}  {milliseconds} ms");
+
+        WriteLines(mode == OutputMode.Full ? console.Output : console.Error, line, s_dependencyStyle);
+    }
+
+    /// <summary>
+    /// Writes the exchange of the selected request as the mode asks. <see cref="OutputMode.Body"/> writes the
+    /// status line with the time and the size to standard error, because standard output holds the bytes alone;
+    /// <see cref="OutputMode.Headers"/> and <see cref="OutputMode.Status"/> write nothing to standard error.
+    /// </summary>
+    public async Task RenderAsync(HttpExchange exchange, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(exchange);
+
+        if (mode == OutputMode.Full)
+        {
+            RenderFull(exchange);
+
+            return;
+        }
+
+        ReceivedResponse response = exchange.Response;
+        if (mode == OutputMode.Body)
+        {
+            WriteLines(console.Error, StatusLine(response), StatusStyle(response));
+            if (secretMask.Contains(response.Body.Span))
+            {
+                RenderWarning(Resources.BodyContainsSecret);
+            }
+
+            await console.StandardOutput.WriteAsync(response.Body, cancellationToken).ConfigureAwait(false);
+            await console.StandardOutput.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+            return;
+        }
+
+        WriteLines(console.Output, ProtocolStatusText(response), StatusStyle(response));
+        if (mode == OutputMode.Headers)
+        {
+            WriteHeaders(console.Output, response);
+        }
+    }
+
+    /// <summary>Writes <paramref name="message"/> to standard error as a note on what the run is doing.</summary>
+    public void RenderNotice(string message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        WriteLines(console.Error, message, s_dependencyStyle);
+    }
+
+    /// <summary>Writes <paramref name="message"/> to standard error as a warning.</summary>
+    public void RenderWarning(string message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        WriteLines(console.Error, Format(s_outputWarningFormat, message), s_warningStyle);
+    }
+
+    /// <summary>Writes <paramref name="message"/> to standard error as an error.</summary>
+    public void RenderError(string message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        WriteLines(console.Error, Format(s_outputErrorFormat, message), s_failureStyle);
+    }
+
+    /// <summary>
+    /// Replaces every C0 and C1 control character and DEL with its code as text, so that what a server sent
+    /// or a file holds cannot move the cursor, clear the screen or set the window title. A tab and a line break are kept; a
+    /// carriage return that no line feed follows is replaced, because it would overwrite the line.
+    /// </summary>
+    internal static string WithVisibleControlCharacters(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        StringBuilder? builder = null;
+        for (int index = 0; index < text.Length; index++)
+        {
+            char character = text[index];
+            bool isKept = !char.IsControl(character)
+                || character is '\t' or '\n'
+                || (character == '\r' && index + 1 < text.Length && text[index + 1] == '\n');
+
+            if (isKept)
+            {
+                builder?.Append(character);
+                continue;
+            }
+
+            builder ??= new StringBuilder(text, 0, index, text.Length + ControlCharacterPrefix.Length + HexDigitCount);
+            builder.Append(ControlCharacterPrefix)
+                .Append(((int)character).ToString(ControlCharacterFormat, CultureInfo.InvariantCulture));
+        }
+
+        return builder?.ToString() ?? text;
+    }
+
+    private static string BodyDisplayText(ReceivedResponse response, Func<string, string> mask)
+    {
+        string? contentType = response.ContentType;
+
+        // An encoded body is compressed bytes whatever its content type says, and the tool does not decode it.
+        if (!response.IsContentEncoded && BodyFormatter.IsText(contentType, response.Body.Span))
+        {
+            return BodyFormatter.FormatForDisplay(contentType, response.Body, mask);
+        }
+
+        string size = FormatSize(response.Body.Length);
+
+        return string.IsNullOrWhiteSpace(contentType)
+            ? Format(s_binaryBodySummaryNoContentTypeFormat, size)
+            : Format(s_binaryBodySummaryFormat, size, contentType);
+    }
+
+    private static string WithoutFinalLineBreak(string text)
+    {
+        if (text.EndsWith("\r\n", StringComparison.Ordinal))
+        {
+            return text[..^2];
+        }
+
+        return text.EndsWith('\n') ? text[..^1] : text;
+    }
+
+    private static string RequestHeaderDisplayValue(KeyValuePair<string, string> header)
+    {
+        // A cookie has no scheme, and the first cookie pair must never be shown as one.
+        if (IsHeader(header, CookieHeader))
+        {
+            return SecretMask.Placeholder;
+        }
+
+        if (!IsHeader(header, AuthorizationHeader) && !IsHeader(header, ProxyAuthorizationHeader))
+        {
+            return header.Value;
+        }
+
+        ReadOnlySpan<char> value = header.Value.AsSpan().Trim();
+        int schemeLength = value.IndexOf(' ');
+        if (schemeLength <= 0 || value[..schemeLength].ContainsAnyExcept(s_tokenCharacters))
+        {
+            return SecretMask.Placeholder;
+        }
+
+        return $"{value[..schemeLength]} {SecretMask.Placeholder}";
+    }
+
+    private static bool IsHeader(KeyValuePair<string, string> header, string name) =>
+        string.Equals(header.Key, name, StringComparison.OrdinalIgnoreCase);
+
+    private static string StatusLine(ReceivedResponse response)
+    {
+        string size = FormatSize(response.Body.Length);
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{ProtocolStatusText(response)}   {Milliseconds(response)} ms \u00B7 {size}");
+    }
+
+    private static string ProtocolStatusText(ReceivedResponse response) =>
+        $"HTTP/{response.HttpVersion.ToString(VersionFieldCount)} {StatusText(response)}";
+
+    private static string StatusText(ReceivedResponse response) =>
+        response.ReasonPhrase.Length == 0
+            ? response.StatusCode.ToString(CultureInfo.InvariantCulture)
+            : string.Create(CultureInfo.InvariantCulture, $"{response.StatusCode} {response.ReasonPhrase}");
+
+    private static long Milliseconds(ReceivedResponse response) =>
+        (long)Math.Round(response.Elapsed.TotalMilliseconds, MidpointRounding.AwayFromZero);
+
+    private static Style StatusStyle(ReceivedResponse response) =>
+        response.StatusCode switch
+        {
+            >= 200 and <= 299 => s_successStyle,
+            >= 300 and <= 399 => s_redirectStyle,
+            _ => s_failureStyle,
+        };
+
+    private static string FormatSize(long byteCount) =>
+        byteCount switch
+        {
+            < BytesPerKilobyte => string.Create(CultureInfo.InvariantCulture, $"{byteCount} B"),
+            < BytesPerMegabyte => string.Create(
+                CultureInfo.InvariantCulture,
+                $"{(double)byteCount / BytesPerKilobyte:F1} KB"),
+            _ => string.Create(CultureInfo.InvariantCulture, $"{(double)byteCount / BytesPerMegabyte:F1} MB"),
+        };
+
+    private static string Format(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
+        string.Format(CultureInfo.CurrentCulture, format, arguments);
+
+    private void RenderFull(HttpExchange exchange)
+    {
+        IAnsiConsole output = console.Output;
+        ResolvedRequest request = exchange.Request;
+        ReceivedResponse response = exchange.Response;
+
+        WriteLines(output, $"{request.Method} {request.DisplayUrl}");
+        foreach (KeyValuePair<string, string> header in request.Headers)
+        {
+            WriteLines(output, $"{header.Key}: {RequestHeaderDisplayValue(header)}");
+        }
+
+        WriteLines(output, string.Empty);
+        WriteLines(output, StatusLine(response), StatusStyle(response));
+        WriteHeaders(output, response);
+        WriteLines(output, string.Empty);
+
+        string body = WithoutFinalLineBreak(BodyDisplayText(response, secretMask.Apply));
+        if (body.Length > 0)
+        {
+            WriteLines(output, body);
+        }
+    }
+
+    private void WriteHeaders(IAnsiConsole target, ReceivedResponse response)
+    {
+        foreach (KeyValuePair<string, string> header in response.Headers)
+        {
+            WriteLines(target, $"{header.Key}: {header.Value}");
+        }
+    }
+
+    // The text is masked as a whole and only then split into lines, so a secret that spans lines is hidden too.
+    // Control characters are made visible after masking: a secret that holds one still matches as it was
+    // registered, and text inserted after the match cannot become part of one.
+    private void WriteLines(IAnsiConsole target, string text, Style? style = null) =>
+        target.Write(new UnwrappedLines(WithVisibleControlCharacters(secretMask.Apply(text)), style));
+
+    /// <summary>
+    /// Text written with the line breaks it has and no others. Spectre's <see cref="Text"/> wraps at the console
+    /// width, which would break a header value or a body line that a piped capture must keep whole.
+    /// </summary>
+    private sealed class UnwrappedLines(string text, Style? style) : IRenderable
+    {
+        private readonly string[] _lines = text.Split('\n');
+
+        public Measurement Measure(RenderOptions options, int maxWidth)
+        {
+            int width = _lines.Max(line => new Segment(line).CellCount());
+
+            return new Measurement(width, width);
+        }
+
+        public IEnumerable<Segment> Render(RenderOptions options, int maxWidth)
+        {
+            foreach (string line in _lines)
+            {
+                string content = line.EndsWith('\r') ? line[..^1] : line;
+                if (content.Length > 0)
+                {
+                    yield return style is null ? new Segment(content) : new Segment(content, style.Value);
+                }
+
+                yield return Segment.LineBreak;
+            }
+        }
+    }
+}

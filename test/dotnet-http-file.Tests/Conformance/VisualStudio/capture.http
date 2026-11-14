@@ -1,0 +1,91 @@
+@host=http://localhost:5199
+
+# 1. Source of values for later requests
+# @name json
+GET {{host}}/json
+
+###
+
+# 2. Body with trailing blank lines, no Content-Type
+POST {{host}}/echo?case=2
+
+line1
+line2
+
+
+
+###
+# 3. JSON body, separator right after it
+POST {{host}}/echo?case=3
+Content-Type: application/json
+
+{"a": 1}
+###
+
+# 4. JSONPath scalars, object, array
+POST {{host}}/echo?case=4
+X-Str: {{json.response.body.$.str}}
+X-Num: {{json.response.body.$.num}}
+X-Dec: {{json.response.body.$.dec}}
+X-Bool: {{json.response.body.$.bool}}
+X-Nul: {{json.response.body.$.nul}}
+Content-Type: text/plain
+
+obj={{json.response.body.$.obj}}
+arr={{json.response.body.$.arr}}
+first={{json.response.body.$.items[0]}}
+
+###
+
+# 5. JSONPath with several matches
+POST {{host}}/echo?case=5
+Content-Type: text/plain
+
+ids={{json.response.body.$.items[*].id}}
+
+###
+
+# 6. JSONPath that matches nothing
+POST {{host}}/echo?case=6
+Content-Type: text/plain
+
+missing={{json.response.body.$.nope}}
+
+###
+
+# 7. Whole body and a response header
+POST {{host}}/echo?case=7
+X-CT: {{json.response.headers.Content-Type}}
+Content-Type: text/plain
+
+{{json.response.body.*}}
+
+###
+
+# 8. Redirect
+GET {{host}}/redirect?case=8
+
+###
+
+# 9. XML source
+# @name xml
+GET {{host}}/xml
+
+###
+
+# 10. XPath
+POST {{host}}/echo?case=10
+X-Token: {{xml.response.body./root/token}}
+
+###
+
+# 11. Plain value from env file (select the "dev" environment first)
+GET {{host}}/echo?case=11&plain={{Plain}}
+
+###
+
+# 12. EntraAccessToken provider value
+GET {{host}}/echo?case=12
+Authorization: Bearer {{Token}}
+
+###

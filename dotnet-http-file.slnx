@@ -1,0 +1,38 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitattributes" />
+    <File Path=".gitignore" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="LICENSE" />
+    <File Path="nuget.config" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/.github/" />
+  <Folder Name="/.github/workflows/">
+    <File Path=".github/workflows/ci.yml" />
+  </Folder>
+  <Folder Name="/docs/">
+    <File Path="docs/behaviour.md" />
+    <File Path="docs/differences-from-visual-studio.md" />
+    <File Path="docs/environments-and-secrets.md" />
+    <File Path="docs/output.md" />
+    <File Path="docs/syntax.md" />
+  </Folder>
+  <Folder Name="/samples/" />
+  <Folder Name="/samples/Basics/">
+    <File Path="samples/Basics/Basics.http" />
+  </Folder>
+  <Folder Name="/samples/Entra/">
+    <File Path="samples/Entra/Entra.http" />
+    <File Path="samples/Entra/http-client.env.json" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/dotnet-http-file/dotnet-http-file.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/dotnet-http-file.Tests/dotnet-http-file.Tests.csproj" />
+  </Folder>
+</Solution>

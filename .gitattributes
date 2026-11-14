@@ -1,0 +1,4 @@
+* text=auto
+*.http -text
+*.rest -text
+test/dotnet-http-file.Tests/Conformance/VisualStudio/** -text
