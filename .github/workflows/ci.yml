@@ -49,8 +49,9 @@ jobs:
       - name: Check the packed tool's version
         shell: bash
         run: |
+          expected="$(dotnet msbuild src/dotnet-http-file -getProperty:Version | tr -d '\r')"
           tool_path="$RUNNER_TEMP/dotnet-http-file-tool"
-          dotnet tool install dotnet-http-file --tool-path "$tool_path" --add-source artifacts --version 0.1.0
+          dotnet tool install dotnet-http-file --tool-path "$tool_path" --add-source artifacts --version "$expected"
           version="$("$tool_path/dotnet-http-file" --version | tr -d '\r')"
-          echo "dotnet-http-file --version: '$version'"
-          test "$version" = "0.1.0"
+          echo "dotnet-http-file --version: '$version', project version: '$expected'"
+          test "$version" = "$expected"
