@@ -71,6 +71,28 @@ az login --tenant 11111111-2222-3333-4444-555555555555
 If no source can provide a token, the request is not sent and the tool exits with code 2. The error names
 the variable, the scope, the tenant, the sign-in sources that were tried, and the `az login` command to run.
 
+#### When Visual Studio and the Azure CLI are signed in to different accounts
+
+Visual Studio is tried before the Azure CLI, so if Visual Studio is signed in, its account is used even when
+`az` is signed in to another one. The token is then for the wrong tenant, and Azure answers
+`401 Unauthorized` with the error code `InvalidAuthenticationTokenTenant` ("The access token is from the wrong
+issuer"). Either of these fixes it:
+
+- Set `tenantId` on the variable to the tenant the API belongs to.
+- Use only the Azure CLI for this run by setting `AZURE_TOKEN_CREDENTIALS`, which Azure.Identity reads:
+
+  ```
+  # bash
+  AZURE_TOKEN_CREDENTIALS=AzureCliCredential dotnet http-file MyApi.http --name getToDos --env dev
+
+  # PowerShell
+  $env:AZURE_TOKEN_CREDENTIALS = "AzureCliCredential"
+  dotnet http-file MyApi.http --name getToDos --env dev
+  ```
+
+The Azure CLI honours `AZURE_CONFIG_DIR`, so if you keep separate `az` profiles, set it alongside
+`AZURE_TOKEN_CREDENTIALS` to choose which profile the token comes from.
+
 `AzureKeyVault` signs in the same way.
 
 ### AspnetUserSecrets

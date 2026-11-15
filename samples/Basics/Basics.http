@@ -17,4 +17,4 @@ Content-Type: application/json
 ###
 
 # @name getToDo
-GET {{BaseUrl}}/todos/{{createToDo.response.body.$.id}}
+GET {{BaseUrl}}/todos/{{getToDos.response.body.$[1].id}}
