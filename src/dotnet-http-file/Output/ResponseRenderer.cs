@@ -161,7 +161,7 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     {
         string? contentType = response.ContentType;
 
-        // An encoded body is compressed bytes whatever its content type says, and the tool does not decode it.
+        // A body still in a coding the tool does not decode is not what its content type says.
         if (!response.IsContentEncoded && BodyFormatter.IsText(contentType, response.Body.Span))
         {
             return BodyFormatter.FormatForDisplay(contentType, response.Body, mask);

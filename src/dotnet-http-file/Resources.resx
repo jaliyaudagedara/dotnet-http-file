@@ -228,6 +228,10 @@
     <value>Invalid JSONPath '{0}' in '{1}'.</value>
     <comment>{0} is the JSONPath. {1} is the whole reference expression. Also used when a filter function in the path fails, for example on a regular expression that is not valid.</comment>
   </data>
+  <data name="ReferenceBodyNotDecoded" xml:space="preserve">
+    <value>'{0}' response body is in Content-Encoding {1}, which is not decoded, so it cannot be referenced.</value>
+    <comment>{0} is the request name. {1} is the list of content codings the tool does not decode, such as br, and is not translated. Content-Encoding is a header name and is not translated.</comment>
+  </data>
   <data name="ReferenceBodyNotXml" xml:space="preserve">
     <value>'{0}' {1} body is not well-formed XML. A body with a DOCTYPE is not supported.</value>
     <comment>{0} is the request name. {1} is the literal keyword request or response from the reference and is not translated. The body is left out because it may hold secrets.</comment>
@@ -288,6 +292,14 @@
     <value>Header '{0}' has a value that contains a line break and cannot be sent (line {1}).</value>
     <comment>{0} is the header name. {1} is the line number of the header. Also used for a null character in the value. The header value is left out because it can hold a secret.</comment>
   </data>
+  <data name="GraphQLQueryMissing" xml:space="preserve">
+    <value>The GraphQL request on line {0} has no query and cannot be sent.</value>
+    <comment>{0} is the line number of the request line. GraphQL is a product name and is not translated. The body is left out because it can hold a secret.</comment>
+  </data>
+  <data name="GraphQLVariablesNotObject" xml:space="preserve">
+    <value>The GraphQL variables of the request on line {0} are not a JSON object; the request cannot be sent.</value>
+    <comment>{0} is the line number of the request line. Used when the text after the first blank line of the body is not valid JSON or is JSON other than an object. GraphQL and JSON are not translated. The variables are left out because they can hold a secret.</comment>
+  </data>
   <data name="UnsupportedHttpVersion" xml:space="preserve">
     <value>'{0}' is not a supported HTTP version. Use HTTP/1.0, HTTP/1.1, HTTP/2 or HTTP/3.</value>
     <comment>{0} is the version written at the end of the request line, such as HTTP/9. HTTP/1.0, HTTP/1.1, HTTP/2 and HTTP/3 are literal syntax and are not translated.</comment>
@@ -307,6 +319,18 @@
   <data name="SendTimedOut" xml:space="preserve">
     <value>{0} {1} timed out after {2} s.</value>
     <comment>{0} is the HTTP method. {1} is the URL, with provider-resolved values shown as ***. {2} is the timeout in seconds; s is the unit symbol.</comment>
+  </data>
+  <data name="ResponseNotDecoded" xml:space="preserve">
+    <value>The response to {0} {1} is left encoded: Content-Encoding {2} is not decoded, only gzip and deflate are.</value>
+    <comment>{0} is the HTTP method. {1} is the URL, with provider-resolved values shown as ***. {2} is the list of content codings the tool does not decode, such as br. Content-Encoding is a header name; gzip and deflate are coding names; none of them are translated. A warning, shown after "warning: ".</comment>
+  </data>
+  <data name="ResponseNotValidCoding" xml:space="preserve">
+    <value>Could not decode the response to {0} {1} ({2}): the body is not valid {3} data.</value>
+    <comment>{0} is the HTTP method. {1} is the URL, with provider-resolved values shown as ***. {2} is the status code, such as 200. {3} is the content coding that failed, such as gzip, and is not translated.</comment>
+  </data>
+  <data name="ResponseDecodedTooLarge" xml:space="preserve">
+    <value>Could not decode the response to {0} {1} ({2}): the {3} body is larger than {4} MiB when decoded.</value>
+    <comment>{0} is the HTTP method. {1} is the URL, with provider-resolved values shown as ***. {2} is the status code, such as 200. {3} is the content coding, such as gzip, and is not translated. {4} is the limit in mebibytes; MiB is the unit symbol.</comment>
   </data>
   <data name="BinaryBodySummary" xml:space="preserve">
     <value>(binary body, {0}, {1}; use --show body to write it)</value>
@@ -349,7 +373,7 @@
     <comment>The --help description of --verbose. --show full is a literal option with its value and is not translated.</comment>
   </data>
   <data name="ShowOptionDescription" xml:space="preserve">
-    <value>What to print: full (request, status, headers and formatted body, with secrets masked), headers (status line and response headers, masked), status (status line only), or body (the response bytes as received, not masked, control characters not neutralised). Default: full in a terminal, body when the output is piped or redirected.</value>
+    <value>What to print: full (request, status, headers and formatted body, with secrets masked), headers (status line and response headers, masked), status (status line only), or body (the response body with gzip and deflate decoded, not masked, control characters not neutralised). Default: full in a terminal, body when the output is piped or redirected.</value>
     <comment>The --help description of --show. full, headers, status and body are literal option values and are not translated.</comment>
   </data>
   <data name="InsecureOptionDescription" xml:space="preserve">

@@ -254,7 +254,7 @@ internal static partial class HttpFileParser
 
     // Whitespace inside {{...}} belongs to the URL, so "https://host/{{$randomInt 1 9}}" has no method.
     // An expression is what Template.Parse takes as one: a "{{" with no "}}" after it is plain text, and in
-    // "{{a {{b}}" only "{{b}}" is an expression.
+    // "{{a {{b}}" only "{{b}}" is an expression, and "\{{a b}}" is plain text.
     private static int IndexOfWhiteSpaceOutsideExpressions(string text)
     {
         for (int index = 0; index < text.Length; index++)
@@ -262,6 +262,12 @@ internal static partial class HttpFileParser
             ReadOnlySpan<char> remaining = text.AsSpan(index);
             if (remaining.StartsWith(ExpressionStart, StringComparison.Ordinal))
             {
+                if (Template.IsEscaped(text, index))
+                {
+                    index += ExpressionStart.Length - 1;
+                    continue;
+                }
+
                 int end = remaining.IndexOf(ExpressionEnd, StringComparison.Ordinal);
                 if (end >= 0 && remaining[1..end].IndexOf(ExpressionStart, StringComparison.Ordinal) < 0)
                 {

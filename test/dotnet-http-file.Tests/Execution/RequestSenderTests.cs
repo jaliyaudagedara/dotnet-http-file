@@ -14,6 +14,7 @@ public sealed class RequestSenderTests
 {
     private const string ContentTypeHeader = "Content-Type";
     private const string ContentLengthHeader = "Content-Length";
+    private const string ContentEncodingHeader = "Content-Encoding";
     private const string HostHeader = "Host";
     private const string CookieHeader = "Cookie";
     private const string AuthorizationHeader = "Authorization";
@@ -756,7 +757,175 @@ public sealed class RequestSenderTests
         Assert.Equal($"GET http://stub.test/again timed out after {seconds} s.", exception.Message);
     }
 
+    [Fact]
+    public async Task SendAsync_GzipResponse_DecodesTheBodyAndKeepsTheHeadersAsReceived()
+    {
+        byte[] encoded = Compression.Gzip(Encoding.UTF8.GetBytes(EchoServer.JsonBody));
+        using HttpClient httpClient = CreateStubClient((_, _) =>
+            Task.FromResult(EncodedResponse(HttpStatusCode.OK, encoded, "gzip")));
+        RequestSender sender = CreateSender(httpClient);
+        List<string> warnings = [];
+
+        ReceivedResponse response = await sender.SendAsync(
+            ResolvedRequestFactory.Create("GET", s_stubUrl),
+            warnings,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(EchoServer.JsonBody, Encoding.UTF8.GetString(response.Body.Span));
+        Assert.Contains(KeyValuePair.Create(ContentEncodingHeader, "gzip"), response.Headers);
+        Assert.Contains(
+            KeyValuePair.Create(ContentLengthHeader, encoded.Length.ToString(CultureInfo.InvariantCulture)),
+            response.Headers);
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public async Task SendAsync_ZlibDeflateResponse_DecodesTheBody()
+    {
+        using HttpClient httpClient = CreateStubClient((_, _) =>
+            Task.FromResult(EncodedResponse(HttpStatusCode.OK, Compression.Zlib("hello"u8), "deflate")));
+        RequestSender sender = CreateSender(httpClient);
+
+        ReceivedResponse response = await sender.SendAsync(
+            ResolvedRequestFactory.Create("GET", s_stubUrl),
+            [],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("hello"u8.ToArray(), response.Body.ToArray());
+    }
+
+    [Fact]
+    public async Task SendAsync_RawDeflateResponse_DecodesTheBody()
+    {
+        using HttpClient httpClient = CreateStubClient((_, _) =>
+            Task.FromResult(EncodedResponse(HttpStatusCode.OK, Compression.RawDeflate("hello"u8), "deflate")));
+        RequestSender sender = CreateSender(httpClient);
+
+        ReceivedResponse response = await sender.SendAsync(
+            ResolvedRequestFactory.Create("GET", s_stubUrl),
+            [],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("hello"u8.ToArray(), response.Body.ToArray());
+    }
+
+    [Fact]
+    public async Task SendAsync_SeveralCodings_DecodesTheLastAppliedFirst()
+    {
+        byte[] encoded = Compression.Gzip(Compression.Zlib("hello"u8));
+        using HttpClient httpClient = CreateStubClient((_, _) =>
+            Task.FromResult(EncodedResponse(HttpStatusCode.OK, encoded, "deflate, identity, gzip")));
+        RequestSender sender = CreateSender(httpClient);
+
+        ReceivedResponse response = await sender.SendAsync(
+            ResolvedRequestFactory.Create("GET", s_stubUrl),
+            [],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("hello"u8.ToArray(), response.Body.ToArray());
+    }
+
+    [Fact]
+    public async Task SendAsync_IdentityCoding_KeepsTheBody()
+    {
+        using HttpClient httpClient = CreateStubClient((_, _) =>
+            Task.FromResult(EncodedResponse(HttpStatusCode.OK, "hello"u8.ToArray(), "identity")));
+        RequestSender sender = CreateSender(httpClient);
+
+        ReceivedResponse response = await sender.SendAsync(
+            ResolvedRequestFactory.Create("GET", s_stubUrl),
+            [],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("hello"u8.ToArray(), response.Body.ToArray());
+    }
+
+    [Fact]
+    public async Task SendAsync_GzipHeaderWithEmptyBody_ReturnsEmptyBody()
+    {
+        using HttpClient httpClient = CreateStubClient((_, _) =>
+            Task.FromResult(EncodedResponse(HttpStatusCode.NotModified, [], "gzip")));
+        RequestSender sender = CreateSender(httpClient);
+
+        ReceivedResponse response = await sender.SendAsync(
+            ResolvedRequestFactory.Create("GET", s_stubUrl),
+            [],
+            TestContext.Current.CancellationToken);
+
+        Assert.True(response.Body.IsEmpty);
+    }
+
+    [Fact]
+    public async Task SendAsync_UnsupportedCoding_KeepsTheBytesAndWarnsNamingTheCoding()
+    {
+        byte[] encoded = Compression.Gzip(Compression.Brotli("hello"u8));
+        using HttpClient httpClient = CreateStubClient((_, _) =>
+            Task.FromResult(EncodedResponse(HttpStatusCode.OK, encoded, "br, gzip")));
+        RequestSender sender = CreateSender(httpClient);
+        List<string> warnings = [];
+
+        ReceivedResponse response = await sender.SendAsync(
+            ResolvedRequestFactory.Create("GET", s_stubUrl),
+            warnings,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(encoded, response.Body.ToArray());
+        Assert.Equal(
+            [
+                "The response to GET http://stub.test/echo is left encoded: Content-Encoding br is not decoded, "
+                + "only gzip and deflate are.",
+            ],
+            warnings);
+    }
+
+    [Fact]
+    public async Task SendAsync_BodyThatIsNotValidGzip_ThrowsNamingMethodUrlStatusAndCoding()
+    {
+        using HttpClient httpClient = CreateStubClient((_, _) =>
+            Task.FromResult(EncodedResponse(HttpStatusCode.Created, "not gzip at all"u8.ToArray(), "gzip")));
+        RequestSender sender = CreateSender(httpClient);
+        ResolvedRequest request = ResolvedRequestFactory.Create("POST", s_stubUrl, body: "body");
+
+        HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
+            () => sender.SendAsync(request, [], TestContext.Current.CancellationToken));
+
+        Assert.Equal(
+            "Could not decode the response to POST http://stub.test/echo (201): the body is not valid gzip data.",
+            exception.Message);
+        Assert.Equal(ExitCodes.ErrorStatus, exception.ExitCode);
+    }
+
+    [Fact]
+    public async Task SendAsync_BodyLargerThanTheLimitWhenDecoded_ThrowsNamingMethodUrlStatusAndCoding()
+    {
+        byte[] encoded = Compression.GzipZeros(ContentDecoder.MaxDecodedLength + 1L);
+        using HttpClient httpClient = CreateStubClient((_, _) =>
+            Task.FromResult(EncodedResponse(HttpStatusCode.OK, encoded, "gzip")));
+        RequestSender sender = CreateSender(httpClient);
+
+        HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
+            () => sender.SendAsync(
+                ResolvedRequestFactory.Create("GET", s_stubUrl),
+                [],
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(
+            "Could not decode the response to GET http://stub.test/echo (200): "
+            + "the gzip body is larger than 100 MiB when decoded.",
+            exception.Message);
+        Assert.Equal(ExitCodes.ErrorStatus, exception.ExitCode);
+    }
+
     private static HttpClient CreateClient() => ToolHttpClient.Create(ToolHttpClient.CreateHandler(insecure: false));
+
+    private static HttpResponseMessage EncodedResponse(HttpStatusCode statusCode, byte[] body, string contentEncoding)
+    {
+        ByteArrayContent content = new(body);
+        content.Headers.TryAddWithoutValidation(ContentEncodingHeader, contentEncoding);
+        content.Headers.ContentLength = body.Length;
+
+        return new HttpResponseMessage(statusCode) { Content = content };
+    }
 
     private static RequestSender CreateSender(HttpClient httpClient) =>
         new(httpClient, new SecretMask(), static _ => { });

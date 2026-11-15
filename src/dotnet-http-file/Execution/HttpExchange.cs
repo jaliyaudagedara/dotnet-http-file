@@ -32,7 +32,10 @@ internal sealed record ResolvedRequest(
     public override string ToString() => $"{Method} {DisplayUrl}";
 }
 
-/// <summary>A response as it was received. <see cref="Body"/> holds the undecoded bytes.</summary>
+/// <summary>
+/// A response as it was received, with its headers unchanged. <see cref="Body"/> holds the content with gzip and
+/// deflate decoded, or the bytes as received when a coding the tool does not decode applies.
+/// </summary>
 internal sealed record ReceivedResponse(
     Version HttpVersion,
     int StatusCode,
@@ -64,15 +67,32 @@ internal sealed record ReceivedResponse(
     }
 
     /// <summary>
-    /// Whether a <c>Content-Encoding</c> other than <c>identity</c> applies, so that <see cref="Body"/> holds
-    /// the encoded bytes and not the content itself.
+    /// The codings of every <c>Content-Encoding</c> header in the order they were applied, <c>identity</c> left
+    /// out.
     /// </summary>
-    public bool IsContentEncoded =>
-        Headers.Any(header =>
-            string.Equals(header.Key, ContentEncodingHeader, StringComparison.OrdinalIgnoreCase)
-            && header.Value
-                .Split(CodingSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Any(coding => !string.Equals(coding, IdentityCoding, StringComparison.OrdinalIgnoreCase)));
+    public IReadOnlyList<string> ContentCodings =>
+    [
+        .. Headers
+            .Where(header => string.Equals(header.Key, ContentEncodingHeader, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(header => header.Value.Split(
+                CodingSeparator,
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Where(coding => !string.Equals(coding, IdentityCoding, StringComparison.OrdinalIgnoreCase)),
+    ];
+
+    /// <summary>The codings of <see cref="ContentCodings"/> that the tool does not decode, each named once.</summary>
+    public IReadOnlyList<string> UnsupportedCodings =>
+    [
+        .. ContentCodings
+            .Where(coding => !ContentDecoder.IsSupported(coding))
+            .Distinct(StringComparer.OrdinalIgnoreCase),
+    ];
+
+    /// <summary>
+    /// Whether a coding the tool does not decode applies to a non-empty body, so that <see cref="Body"/> still holds
+    /// the encoded bytes and not the content itself. An empty body is empty in every coding.
+    /// </summary>
+    public bool IsContentEncoded => !Body.IsEmpty && UnsupportedCodings.Count > 0;
 
     public bool IsSuccess => StatusCode is >= 200 and <= 299;
 }

@@ -25,20 +25,35 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
     private static readonly CompositeFormat s_sendTimedOutFormat =
         CompositeFormat.Parse(Resources.SendTimedOut);
 
+    private static readonly CompositeFormat s_responseNotDecodedFormat =
+        CompositeFormat.Parse(Resources.ResponseNotDecoded);
+
+    private static readonly CompositeFormat s_responseNotValidCodingFormat =
+        CompositeFormat.Parse(Resources.ResponseNotValidCoding);
+
+    private static readonly CompositeFormat s_responseDecodedTooLargeFormat =
+        CompositeFormat.Parse(Resources.ResponseDecodedTooLarge);
+
     /// <summary>
     /// Sends <paramref name="request"/>, follows redirects as <see cref="RedirectPolicy"/> says, and reads the
-    /// whole final response into memory.
+    /// whole final response into memory, decoding a gzip or deflate body.
     /// </summary>
     /// <param name="request">The request to send.</param>
-    /// <param name="warnings">Receives a message for each header that is left out of the request.</param>
+    /// <param name="warnings">
+    /// Receives a message for each header that is left out of the request, and one when the body is in a coding
+    /// that is not decoded.
+    /// </param>
     /// <param name="cancellationToken">The caller's token.</param>
     /// <returns>
-    /// The final response, with the headers as received (one entry per value) and the time from sending to the
-    /// end of the body, redirects included. It is itself a redirect when that one could not be followed.
+    /// The final response, with the headers as received (one entry per value), the body decoded, and the time from
+    /// sending to the end of the body, redirects included. It is itself a redirect when that one could not be
+    /// followed.
     /// </returns>
     /// <exception cref="HttpFileException">
     /// The request could not be built or sent, or it timed out. The message names the display URL of the
-    /// request or of the redirect that failed, and never a header value or the body.
+    /// request or of the redirect that failed, and never a header value or the body. Also thrown, with
+    /// <see cref="HttpFileException.ExitCode"/> set to <see cref="ExitCodes.ErrorStatus"/>, when the body is not
+    /// valid in its coding or decodes to more than <see cref="ContentDecoder.MaxDecodedLength"/> bytes.
     /// </exception>
     /// <exception cref="OperationCanceledException">
     /// <paramref name="cancellationToken"/> was cancelled; the exception carries that token.
@@ -84,13 +99,15 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
                 byte[] body = await response.Content.ReadAsByteArrayAsync(timeout.Token).ConfigureAwait(false);
                 stopwatch.Stop();
 
-                return new ReceivedResponse(
+                ReceivedResponse received = new(
                     response.Version,
                     (int)response.StatusCode,
                     response.ReasonPhrase ?? string.Empty,
                     ReadHeaders(response),
                     body,
                     stopwatch.Elapsed);
+
+                return Decode(current, received, body, warnings, cancellationToken);
             }
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
@@ -119,6 +136,76 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
             throw new HttpFileException(text, exception);
         }
     }
+
+    private static ReceivedResponse Decode(
+        ResolvedRequest request,
+        ReceivedResponse response,
+        byte[] body,
+        ICollection<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        if (body.Length == 0)
+        {
+            return response;
+        }
+
+        IReadOnlyList<string> unsupportedCodings = response.UnsupportedCodings;
+        if (unsupportedCodings.Count > 0)
+        {
+            warnings.Add(Format(
+                s_responseNotDecodedFormat,
+                request.Method,
+                request.DisplayUrl,
+                string.Join(", ", unsupportedCodings)));
+
+            return response;
+        }
+
+        IReadOnlyList<string> codings = response.ContentCodings;
+        if (codings.Count == 0)
+        {
+            return response;
+        }
+
+        // The last coding listed is the last one applied, so it comes off first.
+        byte[] decoded = body;
+        for (int index = codings.Count - 1; index >= 0; index--)
+        {
+            string coding = codings[index];
+            byte[]? next;
+            try
+            {
+                next = ContentDecoder.Decode(decoded, coding, ContentDecoder.MaxDecodedLength, cancellationToken);
+            }
+            catch (InvalidDataException exception)
+            {
+                throw DecodeFailure(s_responseNotValidCodingFormat, request, response, coding, exception);
+            }
+
+            decoded = next ?? throw DecodeFailure(s_responseDecodedTooLargeFormat, request, response, coding);
+        }
+
+        return response with { Body = decoded };
+    }
+
+    private static HttpFileException DecodeFailure(
+        CompositeFormat format,
+        ResolvedRequest request,
+        ReceivedResponse response,
+        string coding,
+        Exception? innerException = null) =>
+        new(
+            Format(
+                format,
+                request.Method,
+                request.DisplayUrl,
+                response.StatusCode,
+                coding,
+                ContentDecoder.MaxDecodedMebibytes),
+            innerException)
+        {
+            ExitCode = ExitCodes.ErrorStatus,
+        };
 
     // The non-validated view gives each value as it was received: the validated one parses and rewrites them.
     private static List<KeyValuePair<string, string>> ReadHeaders(HttpResponseMessage response)

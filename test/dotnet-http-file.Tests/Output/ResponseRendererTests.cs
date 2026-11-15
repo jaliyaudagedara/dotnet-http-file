@@ -1,11 +1,11 @@
 using System.Globalization;
-using System.IO.Compression;
 using System.Text;
 using DotNetHttpFile.Execution;
 using DotNetHttpFile.Output;
 using DotNetHttpFile.Parsing;
 using DotNetHttpFile.Resolution;
 using DotNetHttpFile.Templates;
+using DotNetHttpFile.Tests.Support;
 using Spectre.Console;
 using Spectre.Console.Testing;
 
@@ -193,15 +193,9 @@ public sealed class ResponseRendererTests
     }
 
     [Fact]
-    public async Task RenderFull_GzipEncodedJsonBody_PrintsSummaryInsteadOfDecoding()
+    public async Task RenderFull_DecodedGzipBody_PrintsTheFormattedBodyAndItsDecodedSize()
     {
-        using MemoryStream compressed = new();
-        using (GZipStream gzip = new(compressed, CompressionLevel.Optimal, leaveOpen: true))
-        {
-            gzip.Write("""{"title": "Write blog post"}"""u8);
-        }
-
-        byte[] body = compressed.ToArray();
+        byte[] body = """{"title": "Write blog post"}"""u8.ToArray();
         using Harness harness = new(OutputMode.Full);
         HttpExchange exchange = new(
             Request(),
@@ -215,14 +209,35 @@ public sealed class ResponseRendererTests
 
         await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
 
-        Assert.Equal(
-            $"(binary body, {body.Length} B, application/json; use --show body to write it)",
-            harness.OutputLines[^1]);
-        Assert.Equal("Content-Encoding: gzip", harness.OutputLines[^3]);
+        Assert.Equal(["{", "  \"title\": \"Write blog post\"", "}"], harness.OutputLines[^3..]);
+        Assert.Contains($"HTTP/1.1 200 OK   12 ms {MiddleDot} {body.Length} B", harness.OutputLines);
     }
 
     [Fact]
-    public async Task RenderBody_GzipEncodedBody_WritesBytesUnchanged()
+    public async Task RenderFull_BodyInACodingThatIsNotDecoded_PrintsSummary()
+    {
+        byte[] body = Compression.Brotli("""{"title": "Write blog post"}"""u8);
+        using Harness harness = new(OutputMode.Full);
+        HttpExchange exchange = new(
+            Request(),
+            new ReceivedResponse(
+                new Version(1, 1),
+                200,
+                "OK",
+                [new(ContentTypeHeader, "application/json"), new("Content-Encoding", "br")],
+                body,
+                TimeSpan.FromMilliseconds(12)));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            $"(binary body, {body.Length} B, application/json; use --show body to write it)",
+            harness.OutputLines[^1]);
+        Assert.Equal("Content-Encoding: br", harness.OutputLines[^3]);
+    }
+
+    [Fact]
+    public async Task RenderBody_BodyInACodingThatIsNotDecoded_WritesBytesUnchanged()
     {
         byte[] body = [0x1F, 0x8B, 0x08, 0x00, 0xFF];
         using Harness harness = new(OutputMode.Body);
@@ -232,7 +247,7 @@ public sealed class ResponseRendererTests
                 new Version(1, 1),
                 200,
                 "OK",
-                [new("Content-Encoding", "gzip")],
+                [new("Content-Encoding", "br")],
                 body,
                 TimeSpan.FromMilliseconds(12)));
 

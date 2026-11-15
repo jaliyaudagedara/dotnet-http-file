@@ -80,7 +80,7 @@ the environment file and the variables in the `.http` file apply.
 dotnet http-file MyApi.http --name getToDos --env dev
 ```
 
-Print the status line only, the status line and the response headers, or the response bytes as received:
+Print the status line only, the status line and the response headers, or the response body (gzip and deflate decoded):
 
 ```
 dotnet http-file MyApi.http --name getToDos --show status
@@ -109,7 +109,7 @@ dotnet http-file <file.http> [--name <name>] [--env <env>] [--verbose | --show <
 | `--show full` | | Print the full view: request, status, headers and formatted body, with secrets masked. |
 | `--show headers` | | Print the status line and the response headers, masked. |
 | `--show status` | | Print the status line only. |
-| `--show body` | | Print the response bytes as received: not masked, control characters not neutralised. |
+| `--show body` | | Print the response body with gzip and deflate decoded: not masked, control characters not neutralised. |
 | `--insecure` | `-k` | Skip server certificate validation for this run. |
 | `--version` | | Print the version. |
 | `--help` | `-h`, `-?` | Print help. |
@@ -119,7 +119,7 @@ dotnet http-file <file.http> [--name <name>] [--env <env>] [--verbose | --show <
 | Code | Meaning |
 |---|---|
 | 0 | A response arrived with a 2xx status. |
-| 1 | A response arrived with any other status (the body is still printed), or a dependency returned a non-2xx status and the selected request was not sent. |
+| 1 | A response arrived with any other status (the body is still printed), or a dependency returned a non-2xx status and the selected request was not sent, or a gzip or deflate body could not be decoded or decodes to more than 100 MiB (nothing is printed). |
 | 2 | Nothing was sent: bad arguments, a file that is missing or can't be read, a parse error, an unknown request name, an undefined variable, a provider failure, a dependency cycle, no request picked in a script, or a network failure (DNS, connection refused, certificate not trusted, timeout). |
 | 130 | Cancelled with Ctrl+C. |
 
@@ -130,7 +130,7 @@ request together with the redirects it follows.
 
 - [Environments and secrets](https://github.com/jaliyaudagedara/dotnet-http-file/blob/main/docs/environments-and-secrets.md): environment files, secret providers and Entra access tokens.
 - [Output](https://github.com/jaliyaudagedara/dotnet-http-file/blob/main/docs/output.md): the `--show` modes in detail, and what is masked and what is not.
-- [Syntax](https://github.com/jaliyaudagedara/dotnet-http-file/blob/main/docs/syntax.md): the supported `.http` syntax, request dependencies, and a full example.
+- [Syntax](https://github.com/jaliyaudagedara/dotnet-http-file/blob/main/docs/syntax.md): links to Microsoft's `.http` syntax docs, request dependencies, and a full example.
 - [Behaviour](https://github.com/jaliyaudagedara/dotnet-http-file/blob/main/docs/behaviour.md): redirects, TLS, cookies and other behaviour to know about.
 - [Differences from Visual Studio](https://github.com/jaliyaudagedara/dotnet-http-file/blob/main/docs/differences-from-visual-studio.md): where the tool and Visual Studio differ.
 

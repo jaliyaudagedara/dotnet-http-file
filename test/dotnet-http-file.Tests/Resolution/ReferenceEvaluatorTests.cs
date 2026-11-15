@@ -78,6 +78,16 @@ public sealed class ReferenceEvaluatorTests
     }
 
     [Fact]
+    public void Evaluate_RootArrayIndex_ReturnsElementProperty()
+    {
+        string value = ReferenceEvaluator.Evaluate(
+            Reference("json.response.body.$[0].ID"),
+            JsonExchange("""[{"ID":11},{"ID":22}]"""));
+
+        Assert.Equal("11", value);
+    }
+
+    [Fact]
     public void Evaluate_MultipleMatches_ReturnsCompactArray()
     {
         string value = ReferenceEvaluator.Evaluate(Reference("json.response.body.$.items[*].id"), JsonExchange());
@@ -93,6 +103,49 @@ public sealed class ReferenceEvaluatorTests
             JsonExchange("""[null, {"a": "<b>"}, "caf\u00E9", 1.50]"""));
 
         Assert.Equal("[null,{\"a\":\"<b>\"},\"caf\u00E9\",1.50]", value);
+    }
+
+    [Theory]
+    [InlineData("$.items[*].id", """{"items": []}""", "[]")]
+    [InlineData("$.items[*].id", """{"items": [{"id": 1}]}""", "[1]")]
+    [InlineData("$.items[*]", """{"items": [{"id": "café"}]}""", "[{\"id\":\"café\"}]")]
+    [InlineData("$.obj.*", """{"obj": {"a": "x"}}""", "[\"x\"]")]
+    [InlineData("$.obj[*]", """{"obj": {}}""", "[]")]
+    [InlineData("$.items[*].id", """{"items": [{"id": 1}, {"id": 2}]}""", "[1,2]")]
+    [InlineData("$..*", """{"a": 1}""", "[1]")]
+    public void Evaluate_WildcardProjection_ReturnsCompactArrayForAnyMatchCount(
+        string selector,
+        string body,
+        string expected)
+    {
+        string value = ReferenceEvaluator.Evaluate(Reference("json.response.body." + selector), JsonExchange(body));
+
+        Assert.Equal(expected, value);
+    }
+
+    [Theory]
+    [InlineData("$.items[?@.id == 1].id", "1")]
+    [InlineData("$.arr[0:1]", "1")]
+    [InlineData("$..b", "two")]
+    [InlineData("$.items[?@.tags[*]].id", "1")]
+    public void Evaluate_NonWildcardPathWithOneMatch_ReturnsBareValue(string selector, string expected)
+    {
+        string value = ReferenceEvaluator.Evaluate(
+            Reference("json.response.body." + selector),
+            JsonExchange("""{"items": [{"id": 1, "tags": ["x"]}, {"id": 2}], "arr": [1, 2], "obj": {"b": "two"}}"""));
+
+        Assert.Equal(expected, value);
+    }
+
+    [Fact]
+    public void Evaluate_FilterWithNoMatch_ThrowsVsMessage()
+    {
+        HttpFileException exception = Assert.Throws<HttpFileException>(
+            () => ReferenceEvaluator.Evaluate(Reference("json.response.body.$.items[?@.id == 9]"), JsonExchange()));
+
+        Assert.Equal(
+            "The named request does not contain any content at this path 'json.response.body.$.items[?@.id == 9]'.",
+            exception.Message);
     }
 
     [Fact]
@@ -476,6 +529,42 @@ public sealed class ReferenceEvaluatorTests
 
     private static RequestReferenceSegment Reference(string expression) =>
         Assert.IsType<RequestReferenceSegment>(Assert.Single(Template.Parse("{{" + expression + "}}").Segments));
+
+    [Theory]
+    [InlineData("json.response.body.*")]
+    [InlineData("json.response.body.$.token")]
+    public void Evaluate_ResponseBodyInACodingThatIsNotDecoded_ThrowsNamingTheCoding(string expression)
+    {
+        HttpExchange exchange = Exchange(
+            Response([new(ContentTypeHeader, JsonContentType), new("Content-Encoding", "br")], [0x0B, 0x02, 0x80]));
+
+        HttpFileException exception = Assert.Throws<HttpFileException>(
+            () => ReferenceEvaluator.Evaluate(Reference(expression), exchange));
+
+        Assert.Equal(
+            "'json' response body is in Content-Encoding br, which is not decoded, so it cannot be referenced.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void Evaluate_EmptyResponseBodyWithACodingThatIsNotDecoded_ReturnsEmptyText()
+    {
+        HttpExchange exchange = Exchange(Response([new("Content-Encoding", "br")], []));
+
+        string value = ReferenceEvaluator.Evaluate(Reference("json.response.body.*"), exchange);
+
+        Assert.Equal(string.Empty, value);
+    }
+
+    [Fact]
+    public void Evaluate_ResponseHeaderOfABodyInACodingThatIsNotDecoded_ReadsTheHeader()
+    {
+        HttpExchange exchange = Exchange(Response([new("Content-Encoding", "br")], [0x0B, 0x02, 0x80]));
+
+        string value = ReferenceEvaluator.Evaluate(Reference("json.response.headers.Content-Encoding"), exchange);
+
+        Assert.Equal("br", value);
+    }
 
     private static HttpExchange JsonExchange(string body = CaptureJson) =>
         Exchange(Response(JsonContentType, Encoding.UTF8.GetBytes(body)));

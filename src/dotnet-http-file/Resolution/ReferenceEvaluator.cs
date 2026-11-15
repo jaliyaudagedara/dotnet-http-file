@@ -45,6 +45,9 @@ internal static class ReferenceEvaluator
     private static readonly CompositeFormat s_referenceBodyNotJsonFormat =
         CompositeFormat.Parse(Resources.ReferenceBodyNotJson);
 
+    private static readonly CompositeFormat s_referenceBodyNotDecodedFormat =
+        CompositeFormat.Parse(Resources.ReferenceBodyNotDecoded);
+
     private static readonly CompositeFormat s_referenceBodyNotXmlFormat =
         CompositeFormat.Parse(Resources.ReferenceBodyNotXml);
 
@@ -75,8 +78,9 @@ internal static class ReferenceEvaluator
     /// with <c>/</c>. The content type does not restrict which of them may be used.
     /// </remarks>
     /// <exception cref="HttpFileException">
-    /// The selector is not supported or not valid, the body is not in the format the selector needs, or the
-    /// selector matches nothing. The message never holds body content.
+    /// The selector is not supported or not valid, the response body is in a coding that is not decoded, the body
+    /// is not in the format the selector needs, or the selector matches nothing. The message never holds body
+    /// content.
     /// </exception>
     public static string Evaluate(RequestReferenceSegment reference, HttpExchange exchange)
     {
@@ -86,6 +90,14 @@ internal static class ReferenceEvaluator
         if (reference.Part == ReferencePart.Headers)
         {
             return EvaluateHeader(reference, exchange);
+        }
+
+        if (reference.Source == ReferenceSource.Response && exchange.Response.IsContentEncoded)
+        {
+            throw new HttpFileException(Format(
+                s_referenceBodyNotDecodedFormat,
+                reference.RequestName,
+                string.Join(", ", exchange.Response.UnsupportedCodings)));
         }
 
         string body = reference.Source == ReferenceSource.Request
@@ -171,11 +183,16 @@ internal static class ReferenceEvaluator
                     exception);
             }
 
+            if (IsProjection(path))
+            {
+                return FormatMatchesAsArray(matches);
+            }
+
             return matches.Length switch
             {
                 0 => throw new HttpFileException(Format(s_referenceNoContentAtPathFormat, reference.Expression)),
                 1 => FormatSingleMatch(matches[0]),
-                _ => FormatSeveralMatches(matches),
+                _ => FormatMatchesAsArray(matches),
             };
         }
         catch (InvalidOperationException exception)
@@ -185,6 +202,11 @@ internal static class ReferenceEvaluator
                 exception);
         }
     }
+
+    // Visual Studio 18.13 calls a wildcard path a projection and returns an array whatever the match count.
+    // Other paths, filters and slices among them, keep returning a single match as the bare value.
+    private static bool IsProjection(JsonPath path) =>
+        path.Segments.Any(segment => segment.Selectors.Any(selector => selector is WildcardSelector));
 
     // A filter function such as match() or search() compiles its pattern while the path runs, so a bad
     // pattern fails here and not when the path is parsed.
@@ -232,7 +254,7 @@ internal static class ReferenceEvaluator
             _ => match.ToJsonString(BodyText.IndentedJsonOptions),
         };
 
-    private static string FormatSeveralMatches(JsonNode?[] matches)
+    private static string FormatMatchesAsArray(JsonNode?[] matches)
     {
         ArrayBufferWriter<byte> buffer = new();
         using (Utf8JsonWriter writer = new(buffer, s_compactOptions))

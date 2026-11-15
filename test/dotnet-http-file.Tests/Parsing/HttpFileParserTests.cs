@@ -516,6 +516,7 @@ public sealed class HttpFileParserTests
     [InlineData("https://host/{{oops more")]
     [InlineData("https://host/{{oops more}")]
     [InlineData("https://host/{{a {{b}}")]
+    [InlineData(@"https://host/\{{a b}}")]
     public void Parse_WhiteSpaceAfterUnclosedExpression_ThrowsUnknownMethod(string requestLine)
     {
         HttpFileException exception = Assert.Throws<HttpFileException>(

@@ -46,7 +46,8 @@ internal sealed class HttpFileRunner(
     /// <summary>Sends the request <paramref name="options"/> selects and writes the outcome to the console.</summary>
     /// <returns>
     /// <see cref="ExitCodes.Success"/> for a 2xx response, <see cref="ExitCodes.ErrorStatus"/> for any other
-    /// response, <see cref="ExitCodes.NotSent"/> when the request could not be sent and
+    /// response or for one whose body could not be decoded, <see cref="ExitCodes.NotSent"/> when the request could
+    /// not be sent and
     /// <see cref="ExitCodes.Cancelled"/> when <paramref name="cancellationToken"/> was cancelled.
     /// </returns>
     public async Task<int> RunAsync(RunOptions options, CancellationToken cancellationToken = default)
@@ -79,7 +80,7 @@ internal sealed class HttpFileRunner(
             // The message alone: an inner exception can quote a file or a response.
             renderer.RenderError(exception.Message);
 
-            return ExitCodes.NotSent;
+            return exception.ExitCode;
         }
         catch (Exception exception)
         {
@@ -191,8 +192,9 @@ internal sealed class HttpFileRunner(
 
         async Task<HttpExchange> SendAsync(RequestDefinition request)
         {
-            ResolvedRequest resolved = await resolver.ResolveRequestAsync(request, cancellationToken)
-                .ConfigureAwait(false);
+            ResolvedRequest resolved = GraphQLRequest.Apply(
+                await resolver.ResolveRequestAsync(request, cancellationToken).ConfigureAwait(false),
+                request.Line);
 
             List<string> warnings = [];
             ReceivedResponse response;

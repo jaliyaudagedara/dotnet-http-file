@@ -255,6 +255,77 @@ public sealed class TemplateTests
             template.Segments);
     }
 
+    [Fact]
+    public void Parse_EscapedExpression_IsLiteralWithoutBackslash()
+    {
+        Template template = Template.Parse(@"a \{{b}} c");
+
+        Assert.Equal([new LiteralSegment("a {{b}} c")], template.Segments);
+    }
+
+    [Fact]
+    public void Parse_EscapedExpressionBesideExpression_ParsesOnlyTheUnescapedOne()
+    {
+        Template template = Template.Parse(@"\{{a}}{{b}}\{{c}}");
+
+        Assert.Equal(
+            [
+                new LiteralSegment("{{a}}"),
+                new VariableSegment("b"),
+                new LiteralSegment("{{c}}"),
+            ],
+            template.Segments);
+    }
+
+    [Theory]
+    [InlineData(@"\{{a b}}", "{{a b}}")]
+    [InlineData(@"\{{$}}", "{{$}}")]
+    [InlineData(@"\{{a", "{{a")]
+    [InlineData(@"\\{{x}}", @"\{{x}}")]
+    [InlineData(@"{{a \{{b}}", "{{a {{b}}")]
+    [InlineData(@"\{{{a}}}", "{{{a}}}")]
+    [InlineData(@"a\b \{ c\", @"a\b \{ c\")]
+    public void Parse_EscapeOrPlainBackslash_IsLiteral(string text, string expected)
+    {
+        Template template = Template.Parse(text);
+
+        Assert.Equal([new LiteralSegment(expected)], template.Segments);
+    }
+
+    [Fact]
+    public void Parse_LongLineOfNestedOpenings_AnchorsToLastOpening()
+    {
+        const int Openings = 200_000;
+        string openings = string.Concat(Enumerable.Repeat("{{", Openings));
+
+        Template template = Template.Parse(openings + "x}}");
+
+        Assert.Equal(
+            [
+                new LiteralSegment(openings[..^2]),
+                new VariableSegment("x"),
+            ],
+            template.Segments);
+    }
+
+    [Fact]
+    public void Parse_LongLineOfExpressions_ParsesEach()
+    {
+        const int Expressions = 200_000;
+
+        Template template = Template.Parse(string.Concat(Enumerable.Repeat("{{a}}", Expressions)));
+
+        Assert.Equal(Expressions, template.Segments.Count(segment => segment is VariableSegment { Name: "a" }));
+    }
+
+    [Fact]
+    public void Parse_EscapedExpressionBeforeInvalidExpression_ReportsRawOffset()
+    {
+        HttpFileException exception = Assert.Throws<HttpFileException>(() => Template.Parse(@"\{{a}} {{b c}}"));
+
+        Assert.Equal(7, exception.ExpressionOffset);
+    }
+
     [Theory]
     [InlineData("x {{a b}} y", 2)]
     [InlineData("{{ok}}\r\n{{c {{a b}}", 12)]

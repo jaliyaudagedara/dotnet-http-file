@@ -36,6 +36,56 @@ public sealed class VariableResolverTests
     }
 
     [Fact]
+    public async Task ResolveRequestAsync_EscapedExpressionOfDefinedVariable_SendsBracesWithoutLookup()
+    {
+        HttpFile file = Parse(
+            "@id=42",
+            @"POST https://localhost/items/{{id}}?raw=\{{id}}",
+            @"X-Template: \{{id}} {{id}}",
+            "",
+            @"{""template"": ""\{{id}}"", ""id"": {{id}}}");
+        VariableResolver resolver = CreateResolver(file);
+
+        ResolvedRequest resolved = await resolver.ResolveRequestAsync(
+            file.Requests[0],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            ("https://localhost/items/42?raw={{id}}", "{{id}} 42", """{"template": "{{id}}", "id": 42}"""),
+            (resolved.DisplayUrl, Assert.Single(resolved.Headers).Value, resolved.Body));
+    }
+
+    [Fact]
+    public async Task ResolveAsync_FileVariableHoldingEscape_InsertsBracesWithoutParsingAgain()
+    {
+        HttpFile file = Parse(
+            "@secret=value",
+            @"@raw=\{{secret}}",
+            "GET https://localhost/?v={{raw}}");
+        VariableResolver resolver = CreateResolver(file);
+
+        string url = await ResolveUrlAsync(resolver, file.Requests[0]);
+
+        Assert.Equal("https://localhost/?v={{secret}}", url);
+    }
+
+    [Fact]
+    public async Task ResolveRequestAsync_UndefinedInBodyAfterEscapes_ReportsExpressionLine()
+    {
+        HttpFile file = Parse(
+            "POST https://localhost/items",
+            "",
+            @"\{{a}}\{{b}}",
+            "{{missing}}");
+        VariableResolver resolver = CreateResolver(file);
+
+        HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
+            () => resolver.ResolveRequestAsync(file.Requests[0], TestContext.Current.CancellationToken));
+
+        Assert.Equal("Variable 'missing' is not defined (line 4).", exception.Message);
+    }
+
+    [Fact]
     public async Task ResolveAsync_FileVariableOverridesEnvironment_UsesFileValue()
     {
         HttpFile file = Parse(

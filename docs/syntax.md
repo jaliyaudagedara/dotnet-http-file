@@ -2,43 +2,19 @@
 
 [Back to README](../README.md)
 
-## Supported syntax
+## Syntax
 
-The syntax is the one documented for Visual Studio at
-https://learn.microsoft.com/aspnet/core/test/http-files:
+The tool reads the `.http` syntax of Visual Studio 2026 18.13, so Microsoft's documentation is the
+reference:
 
-- Request line `METHOD URL [HTTP-version]`, with `###` between requests. The method is one of `GET`, `POST`,
-  `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`, `TRACE` and `CONNECT`, and a line with a URL alone is a `GET`.
-  The version is `HTTP/1.1` (the default), `HTTP/2` or `HTTP/3`. `HTTP/1.0` is accepted as well.
-- Headers directly after the request line, and a body after a blank line.
-- `#` and `//` comment lines.
-- File variables, `@Name=Value`. They are case-sensitive, must be defined before they are used, and can use
-  variables defined earlier.
-- `{{variable}}` in the URL, the headers and the body.
-- Request variables: name a request with `# @name login`, then read from it with
-  `{{login.response.body.$.token}}`. The general form is
-  `{{name.(response|request).(body|headers).(*|JSONPath|XPath|HeaderName)}}`:
-  - `body.*` is the whole body.
-  - `body.$...` is a JSONPath (RFC 9535). A string comes back without quotes, an object or array as
-    pretty-printed JSON, and several matches as a compact JSON array.
-  - `body./...` is an XPath for an XML body. It returns the text value of the node it matches.
-  - `headers.<Name>` is a header value. Header names are not case-sensitive.
-- Dynamic variables:
-  - `{{$guid}}`
-  - `{{$randomInt [min max]}}`
-  - `{{$timestamp [offset unit]}}`
-  - `{{$datetime [format] [offset unit]}}` and `{{$localDatetime [format] [offset unit]}}`. The format is
-    `rfc1123`, `iso8601` or a custom format in quotes. Offset units are `ms`, `s`, `m`, `h`, `d`, `w`, `M`
-    and `y`.
-  - `{{$processEnv NAME}}` reads an environment variable.
-  - `{{$dotenv NAME}}` reads `NAME` from a `.env` file. The file is looked for in the folder of the nearest
-    `.csproj`, searching up from the `.http` file. If there is no project, it is looked for next to the
-    `.http` file.
+- [Use .http files in Visual Studio](https://learn.microsoft.com/aspnet/core/test/http-files)
+- [Visual Studio Insiders release notes](https://learn.microsoft.com/visualstudio/releases/2026/release-notes-insiders),
+  for the 18.13 additions: escaping, readable URLs, nested variables, JSON array chaining, compressed
+  responses and GraphQL.
 
-A request body without a `Content-Type` header is sent as `text/plain; charset=utf-8`.
-
-Environment files and secret providers are described in
-[Environments and secrets](environments-and-secrets.md).
+Where the tool behaves differently, it is listed in
+[Known differences from Visual Studio](differences-from-visual-studio.md). Environment files and secret
+providers are described in [Environments and secrets](environments-and-secrets.md).
 
 ## Request dependencies
 

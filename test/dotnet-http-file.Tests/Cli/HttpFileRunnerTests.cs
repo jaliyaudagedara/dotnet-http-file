@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text;
 using DotNetHttpFile.Cli;
@@ -122,6 +123,91 @@ public sealed class HttpFileRunnerTests
         Assert.StartsWith("\u2192 createToDo  POST ", Assert.Single(harness.OutputLines), StringComparison.Ordinal);
         Assert.Equal(
             ["error: Dependency 'createToDo' returned 404 Not Found; 'getToDo' was not sent."],
+            harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_GzipDependency_ChainsFromTheDecodedBody()
+    {
+        using Harness harness = new();
+        List<string> sent = [];
+        harness.CreateHandler = _ => new StubHandler((message, _) =>
+        {
+            sent.Add(message.RequestUri?.AbsolutePath ?? string.Empty);
+
+            return Task.FromResult(sent.Count == 1
+                ? GzipResponse(HttpStatusCode.OK, Compression.Gzip("""{"id": 7}"""u8))
+                : new HttpResponseMessage(HttpStatusCode.OK));
+        });
+        string path = await harness.WriteHttpFileAsync(
+            """
+            # @name createToDo
+            POST http://localhost/todos
+
+            ###
+
+            # @name getToDo
+            GET http://localhost/todos/{{createToDo.response.body.$.id}}
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path, "getToDo", null, null, Insecure: false));
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(["/todos", "/todos/7"], sent);
+    }
+
+    [Fact]
+    public async Task RunAsync_ResponseThatCannotBeDecoded_ReturnsErrorStatusAndPrintsOnlyTheError()
+    {
+        using Harness harness = new();
+        harness.CreateHandler = _ => new StubHandler((_, _) =>
+            Task.FromResult(GzipResponse(HttpStatusCode.OK, "not gzip"u8.ToArray())));
+        string path = await harness.WriteHttpFileAsync("GET http://localhost/todos");
+
+        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+
+        Assert.Equal(ExitCodes.ErrorStatus, exitCode);
+        Assert.Empty(harness.OutputLines);
+        Assert.Equal(
+            [
+                "error: Could not decode the response to GET http://localhost/todos (200): "
+                + "the body is not valid gzip data.",
+            ],
+            harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_DependencyThatCannotBeDecoded_ReturnsErrorStatusAndSkipsTarget()
+    {
+        using Harness harness = new();
+        List<string> sent = [];
+        harness.CreateHandler = _ => new StubHandler((message, _) =>
+        {
+            sent.Add(message.RequestUri?.AbsolutePath ?? string.Empty);
+
+            return Task.FromResult(GzipResponse(HttpStatusCode.OK, "not gzip"u8.ToArray()));
+        });
+        string path = await harness.WriteHttpFileAsync(
+            """
+            # @name createToDo
+            POST http://localhost/todos
+
+            ###
+
+            # @name getToDo
+            GET http://localhost/todos/{{createToDo.response.body.$.id}}
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path, "getToDo", null, null, Insecure: false));
+
+        Assert.Equal(ExitCodes.ErrorStatus, exitCode);
+        Assert.Equal(["/todos"], sent);
+        Assert.Empty(harness.OutputLines);
+        Assert.Equal(
+            [
+                "error: Could not decode the response to POST http://localhost/todos (200): "
+                + "the body is not valid gzip data.",
+            ],
             harness.ErrorLines);
     }
 
@@ -828,6 +914,72 @@ public sealed class HttpFileRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_FileVariableNestingVariablesAndDynamicValue_SendsComposedValue()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            $$$"""
+            @user=jaliya
+            @postfix={{$randomInt 10 99}}
+            @email={{user}}{{postfix}}@example.com
+
+            GET {{{server.BaseUri}}}echo?email={{email}}
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Matches(
+            @"^GET /echo\?email=jaliya[1-9][0-9]@example\.com HTTP/1\.1$",
+            Assert.Single(server.Requests).RequestLine);
+    }
+
+    [Fact]
+    public async Task RunAsync_FileVariableReadingLaterResponseUnused_DoesNotBlockEarlierRequest()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            $$$"""
+            @fromLater={{later.response.body.$.num}}
+
+            # @name first
+            GET {{{server.BaseUri}}}echo/first
+
+            ###
+
+            # @name later
+            GET {{{server.BaseUri}}}json
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path, "first", null, null, Insecure: false));
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(["GET /echo/first HTTP/1.1"], server.Requests.Select(request => request.RequestLine));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" HTTP/1.1")]
+    public async Task RunAsync_UrlWithSpacesAndNonAscii_SendsPercentEncodedTarget(string httpVersion)
+    {
+        const string Cafe = "café";
+        const string Jose = "José";
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            $"GET {server.BaseUri}echo/my file/{Cafe}?q=a b&name={Jose}{httpVersion}");
+
+        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(
+            "GET /echo/my%20file/caf%C3%A9?q=a%20b&name=Jos%C3%A9 HTTP/1.1",
+            Assert.Single(server.Requests).RequestLine);
+    }
+
+    [Fact]
     public async Task RunAsync_SecretInUrlEchoedInUriEscaping_MasksItInTheBody()
     {
         const string UrlSecret = "p@ss w/rd+1";
@@ -950,6 +1102,151 @@ public sealed class HttpFileRunnerTests
         Assert.Equal([$"error: 'TODO_ID' is not defined in {dotEnvPath}."], harness.ErrorLines);
     }
 
+    [Fact]
+    public async Task RunAsync_GraphQLRequest_SendsTheEnvelopeWithoutTheMarker()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            $$$"""
+            @heroId = 1000
+
+            POST {{{server.BaseUri}}}graphql
+            X-Request-Type: GraphQL
+
+            query Hero($id: ID!) { hero(id: $id) { name } }
+
+            { "id": "{{heroId}}" }
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        RecordedRequest received = Assert.Single(server.Requests);
+        Assert.Equal(
+            """{"query":"query Hero($id: ID!) { hero(id: $id) { name } }","variables":{"id":"1000"},"operationName":"Hero"}""",
+            Encoding.UTF8.GetString(received.Body.Span));
+        Assert.Equal(["application/json"], received.HeaderValues("Content-Type"));
+        Assert.Empty(received.HeaderValues("X-Request-Type"));
+        Assert.Equal(
+            [$"POST {server.BaseUri}graphql", "Content-Type: application/json", string.Empty],
+            harness.OutputLines[..3]);
+    }
+
+    [Fact]
+    public async Task RunAsync_GraphQLDependency_ReferencesSeeWhatWasSent()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            $$$"""
+            # @name gql
+            POST {{{server.BaseUri}}}graphql
+            X-Request-Type: graphql
+
+            query Hero { hero { name } }
+
+            ###
+
+            # @name next
+            GET {{{server.BaseUri}}}echo
+            X-Operation: {{gql.request.body.$.operationName}}
+            X-Type: {{gql.request.headers.Content-Type}}
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path, "next", null, null, Insecure: false));
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        RecordedRequest received = server.Requests[^1];
+        Assert.Equal(["Hero"], received.HeaderValues("X-Operation"));
+        Assert.Equal(["application/json"], received.HeaderValues("X-Type"));
+    }
+
+    [Fact]
+    public async Task RunAsync_GraphQLDependencyMarkerReferenced_IsNotFound()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            $$$"""
+            # @name gql
+            POST {{{server.BaseUri}}}graphql
+            X-Request-Type: graphql
+
+            { hero { name } }
+
+            ###
+
+            # @name next
+            GET {{{server.BaseUri}}}echo
+            X-Type: {{gql.request.headers.X-Request-Type}}
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path, "next", null, null, Insecure: false));
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Single(server.Requests);
+    }
+
+    [Fact]
+    public async Task RunAsync_GraphQLSecretEscapedInTheEnvelope_MasksIt()
+    {
+        const string QuotedToken = "pa\"ss\\word-123";
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        harness.Providers.Add(new FakeSecretProvider(AccessTokenProviderName, _ => QuotedToken));
+        await harness.WriteFileAsync(
+            EnvironmentFileLocator.FileName,
+            """{ "dev": { "token": { "provider": "EntraAccessToken" } } }""");
+        string path = await harness.WriteHttpFileAsync(
+            $$$"""
+            # @name gql
+            POST {{{server.BaseUri}}}graphql
+            X-Request-Type: graphql
+
+            { login(password: "{{token}}") }
+
+            ###
+
+            # @name next
+            GET {{{server.BaseUri}}}echo
+            X-Sent: {{gql.request.body.*}}
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path, "next", "dev", null, Insecure: false));
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(
+            ["""{"query":"{ login(password: \"pa\"ss\\word-123\") }"}"""],
+            server.Requests[^1].HeaderValues("X-Sent"));
+        Assert.Contains("""X-Sent: {"query":"{ login(password: \"***\") }"}""", harness.OutputLines);
+        Assert.DoesNotContain("word-123", harness.Output.Output + harness.Error.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_GraphQLVariablesNotAnObject_ReturnsNotSent()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            $$$"""
+            POST {{{server.BaseUri}}}graphql
+            X-Request-Type: graphql
+
+            { hero { name } }
+
+            [1, 2]
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Empty(server.Requests);
+        Assert.Equal(
+            ["error: The GraphQL variables of the request on line 1 are not a JSON object; the request cannot be sent."],
+            harness.ErrorLines);
+    }
+
     // Windows refuses a second open of a file held without sharing; elsewhere the file loses its read permission.
     private static IDisposable MakeUnreadable(string path)
     {
@@ -984,6 +1281,15 @@ public sealed class HttpFileRunnerTests
 
         public Task<string> ResolveAsync(SecretRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(resolve(request));
+    }
+
+    private static HttpResponseMessage GzipResponse(HttpStatusCode statusCode, byte[] body)
+    {
+        ByteArrayContent content = new(body);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        content.Headers.ContentEncoding.Add("gzip");
+
+        return new HttpResponseMessage(statusCode) { Content = content };
     }
 
     private sealed class StubHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send)

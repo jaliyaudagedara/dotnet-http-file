@@ -27,17 +27,52 @@ public sealed class ReceivedResponseTests
     }
 
     [Theory]
-    [InlineData("gzip", true)]
-    [InlineData("GZIP", true)]
+    [InlineData("br", true)]
     [InlineData("identity, br", true)]
+    [InlineData("gzip, br", true)]
+    [InlineData("gzip", false)]
+    [InlineData("GZIP", false)]
+    [InlineData("deflate, gzip", false)]
     [InlineData("identity", false)]
     [InlineData("Identity", false)]
     [InlineData("", false)]
-    public void IsContentEncoded_ContentEncodingHeader_IsTrueUnlessIdentity(string contentEncoding, bool expected)
+    public void IsContentEncoded_ContentEncodingHeader_IsTrueOnlyForACodingThatIsNotDecoded(
+        string contentEncoding,
+        bool expected)
     {
-        ReceivedResponse response = CreateResponse(200, [new("content-encoding", contentEncoding)]);
+        ReceivedResponse response = CreateResponse(200, [new("content-encoding", contentEncoding)], [0x0B]);
 
         Assert.Equal(expected, response.IsContentEncoded);
+    }
+
+    [Fact]
+    public void IsContentEncoded_EmptyBodyWithUnsupportedCoding_IsFalse()
+    {
+        ReceivedResponse response = CreateResponse(204, [new("Content-Encoding", "br")]);
+
+        Assert.False(response.IsContentEncoded);
+    }
+
+    [Fact]
+    public void ContentCodings_SeveralHeaders_ListsCodingsInHeaderOrderWithoutIdentity()
+    {
+        ReceivedResponse response = CreateResponse(
+            200,
+            [
+                new("Content-Encoding", "deflate, identity"),
+                new("Content-Type", "application/json"),
+                new("content-encoding", " gzip ,br"),
+            ]);
+
+        Assert.Equal(["deflate", "gzip", "br"], response.ContentCodings);
+    }
+
+    [Fact]
+    public void UnsupportedCodings_RepeatedUnsupportedCoding_ListsItOnce()
+    {
+        ReceivedResponse response = CreateResponse(200, [new("Content-Encoding", "br, gzip, BR, zstd")]);
+
+        Assert.Equal(["br", "zstd"], response.UnsupportedCodings);
     }
 
     [Fact]
@@ -63,6 +98,7 @@ public sealed class ReceivedResponseTests
 
     private static ReceivedResponse CreateResponse(
         int statusCode,
-        IReadOnlyList<KeyValuePair<string, string>> headers) =>
-        new(new Version(1, 1), statusCode, "Reason", headers, ReadOnlyMemory<byte>.Empty, TimeSpan.Zero);
+        IReadOnlyList<KeyValuePair<string, string>> headers,
+        byte[]? body = null) =>
+        new(new Version(1, 1), statusCode, "Reason", headers, body ?? [], TimeSpan.Zero);
 }

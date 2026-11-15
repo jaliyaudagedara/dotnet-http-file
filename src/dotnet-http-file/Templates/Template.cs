@@ -4,11 +4,12 @@ using System.Text.RegularExpressions;
 
 namespace DotNetHttpFile.Templates;
 
-internal sealed partial record Template(string Raw, IReadOnlyList<TemplateSegment> Segments)
+internal sealed partial record Template
 {
     private const string ExpressionStart = "{{";
     private const string ExpressionEnd = "}}";
     private const char DynamicPrefix = '$';
+    private const char EscapeCharacter = '\\';
     private const char Quote = '"';
     private const char CarriageReturn = '\r';
     private const char LineFeed = '\n';
@@ -18,17 +19,49 @@ internal sealed partial record Template(string Raw, IReadOnlyList<TemplateSegmen
     private static readonly CompositeFormat s_invalidExpressionFormat =
         CompositeFormat.Parse(Resources.InvalidExpression);
 
-    public static Template Empty { get; } = new(string.Empty, []);
+    // Private, and without init accessors, so that only Parse can pair segments with their offsets.
+    private Template(string raw, IReadOnlyList<TemplateSegment> segments, IReadOnlyList<int> segmentOffsets)
+    {
+        Raw = raw;
+        Segments = segments;
+        SegmentOffsets = segmentOffsets;
+    }
 
-    /// <summary>Splits <paramref name="text"/> into literal text and <c>{{...}}</c> expressions.</summary>
+    public static Template Empty { get; } = new(string.Empty, [], []);
+
+    /// <summary>The text as written, escapes included.</summary>
+    public string Raw { get; }
+
+    public IReadOnlyList<TemplateSegment> Segments { get; }
+
+    /// <summary>
+    /// The offset in <see cref="Raw"/> where each segment starts, parallel to <see cref="Segments"/>. A literal
+    /// can be shorter than its raw text, since an escape drops its backslash.
+    /// </summary>
+    public IReadOnlyList<int> SegmentOffsets { get; }
+
+    /// <summary>
+    /// Splits <paramref name="text"/> into literal text and <c>{{...}}</c> expressions. <c>\{{</c> is the
+    /// literal text <c>{{</c> and starts no expression.
+    /// </summary>
     /// <exception cref="HttpFileException">A closed expression is not a variable, function or reference.</exception>
     public static Template Parse(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
 
         List<TemplateSegment> segments = [];
+        List<int> offsets = [];
+        StringBuilder literal = new();
         int literalStart = 0;
+        int copiedTo = 0;
         int searchFrom = 0;
+
+        // An opening inside a span already searched closes where the span's first opening does, or not at all
+        // when it is before the end of a line with no "}}" left on it. Reusing those, and the end of the
+        // current line, keeps the scan linear.
+        int unclosedUntil = -1;
+        int knownEnd = -1;
+        int lineEnd = -1;
 
         while (true)
         {
@@ -38,36 +71,81 @@ internal sealed partial record Template(string Raw, IReadOnlyList<TemplateSegmen
                 break;
             }
 
-            int lineEnd = text.AsSpan(start).IndexOfAny(CarriageReturn, LineFeed);
-            lineEnd = lineEnd < 0 ? text.Length : start + lineEnd;
-
-            int contentStart = start + ExpressionStart.Length;
-            int end = text.IndexOf(ExpressionEnd, contentStart, lineEnd - contentStart, StringComparison.Ordinal);
-            if (end < 0)
+            if (IsEscaped(text, start))
             {
-                searchFrom = lineEnd;
+                literal.Append(text, copiedTo, start - 1 - copiedTo).Append(ExpressionStart);
+                copiedTo = start + ExpressionStart.Length;
+                searchFrom = copiedTo;
                 continue;
             }
 
-            // "{{a {{b}}" is the text "{{a " followed by the expression "b".
-            start += text.AsSpan(start, end - start).LastIndexOf(ExpressionStart, StringComparison.Ordinal);
-
-            if (start > literalStart)
+            if (start < unclosedUntil)
             {
-                segments.Add(new LiteralSegment(text[literalStart..start]));
+                searchFrom = start + 1;
+                continue;
             }
 
-            segments.Add(ParseExpression(text[(start + ExpressionStart.Length)..end].Trim(), start));
+            int contentStart = start + ExpressionStart.Length;
+            int end = knownEnd;
+            if (start >= knownEnd)
+            {
+                if (start >= lineEnd)
+                {
+                    lineEnd = text.AsSpan(start).IndexOfAny(CarriageReturn, LineFeed);
+                    lineEnd = lineEnd < 0 ? text.Length : start + lineEnd;
+                }
+
+                end = text.IndexOf(ExpressionEnd, contentStart, lineEnd - contentStart, StringComparison.Ordinal);
+                if (end < 0)
+                {
+                    unclosedUntil = lineEnd;
+                    searchFrom = start + 1;
+                    continue;
+                }
+
+                knownEnd = end;
+            }
+
+            // "{{a {{b}}" is the text "{{a " followed by the expression "b", and in "{{a \{{b}}" neither
+            // opening starts an expression.
+            int innerStart = text.IndexOf(ExpressionStart, start + 1, end - start - 1, StringComparison.Ordinal);
+            if (innerStart >= 0)
+            {
+                searchFrom = innerStart;
+                continue;
+            }
+
+            literal.Append(text, copiedTo, start - copiedTo);
+            if (literal.Length > 0)
+            {
+                segments.Add(new LiteralSegment(literal.ToString()));
+                offsets.Add(literalStart);
+                literal.Clear();
+            }
+
+            segments.Add(ParseExpression(text[contentStart..end].Trim(), start));
+            offsets.Add(start);
             literalStart = end + ExpressionEnd.Length;
+            copiedTo = literalStart;
             searchFrom = literalStart;
         }
 
-        if (literalStart < text.Length)
+        literal.Append(text, copiedTo, text.Length - copiedTo);
+        if (literal.Length > 0)
         {
-            segments.Add(new LiteralSegment(text[literalStart..]));
+            segments.Add(new LiteralSegment(literal.ToString()));
+            offsets.Add(literalStart);
         }
 
-        return new Template(text, segments);
+        return new Template(text, segments, offsets);
+    }
+
+    /// <summary>Gets whether the <c>{{</c> at <paramref name="start"/> in <paramref name="text"/> is escaped.</summary>
+    public static bool IsEscaped(string text, int start)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        return start > 0 && text[start - 1] == EscapeCharacter;
     }
 
     [GeneratedRegex(
