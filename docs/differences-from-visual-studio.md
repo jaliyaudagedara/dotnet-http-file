@@ -20,4 +20,7 @@ Compared with Visual Studio 2026 Insiders 18.13:
 - **GraphQL variables are a JSON object.** A last block that is a JSON array is part of the query. VS sends it
   as the variables.
 - **GraphQL without `Content-Type`** is sent as `application/json`. VS sends `text/plain; charset=utf-8`.
-- **Not checked against VS:** wildcard JSONPath with zero or one match.
+- **Not checked against VS:**
+  - A backslash that belongs to the text right before `{{` (see [Escaping `{{`](syntax.md#escaping-)).
+  - Wildcard JSONPath (`[*]` or `.*`) with zero or one match. The tool returns an array, as the 18.13 release
+    notes say a `[*]` projection does.

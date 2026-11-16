@@ -31,3 +31,20 @@ GET {{HostAddress}}/todos/{{createToDo.response.body.$.id}}
 ```
 
 Running `getToDo` sends `createToDo` first, so each run creates a record.
+
+## Escaping `{{`
+
+`\{{` sends `{{` as text: `\{{id}}` is sent as `{{id}}` and is not looked up.
+
+Every backslash right before `{{` is that escape, also one that belongs to the text: `CONTOSO\{{user}}` sends
+`CONTOSO{{user}}`. To send the backslash and the value, put the text with its backslash in a file variable:
+
+```http
+@Domain=CONTOSO\
+@user=jaliya
+
+GET {{HostAddress}}/whoami
+X-Account: {{Domain}}{{user}}
+```
+
+This sends `X-Account: CONTOSO\jaliya`.
