@@ -235,8 +235,9 @@ public sealed class HttpFileRunnerTests
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(
             [
-                $"error: {path} has 3 requests; pick one with --name. Named requests: beta, alpha. "
-                    + "Requests without a name can't be picked from a script; add '# @name <name>' above them.",
+                $"error: {path} has 3 requests; pick one with --name. Names and titles: beta, alpha. "
+                    + "A request with neither a name nor a title can't be picked from a script; "
+                    + "add '# @name <name>' or '### <title>' above it.",
             ],
             harness.ErrorLines);
         Assert.Empty(harness.Picker.Offered);
@@ -261,8 +262,8 @@ public sealed class HttpFileRunnerTests
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(
             [
-                $"error: {path} has 2 requests and none has a name; "
-                    + "add '# @name <name>' above one and pick it with --name.",
+                $"error: {path} has 2 requests and none has a name or title; "
+                    + "add '# @name <name>' or '### <title>' above one and pick it with --name.",
             ],
             harness.ErrorLines);
         Assert.Empty(harness.Picker.Offered);
@@ -345,9 +346,120 @@ public sealed class HttpFileRunnerTests
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(
-            [$"error: No request named 'Alpha' in {path}. Named requests: alpha, beta."],
+            [$"error: No request named or titled 'Alpha' in {path}. Names and titles: alpha, beta."],
             harness.ErrorLines);
         Assert.Equal(0, harness.HandlersCreated);
+    }
+
+    [Fact]
+    public async Task RunAsync_NameMatchesTitle_SendsThatRequest()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            $"""
+            ### Create index
+            POST {server.BaseUri}create
+
+            ### List indexes
+            GET {server.BaseUri}list
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "list INDEXES" });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(["GET /list HTTP/1.1"], server.Requests.Select(request => request.RequestLine));
+    }
+
+    [Fact]
+    public async Task RunAsync_NameMatchesAtNameBeforeTitle()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            $"""
+            # @name x
+            GET {server.BaseUri}named
+
+            ### x
+            GET {server.BaseUri}titled
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "x" });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(["GET /named HTTP/1.1"], server.Requests.Select(request => request.RequestLine));
+    }
+
+    [Fact]
+    public async Task RunAsync_TitleOnTwoRequests_FailsAsAmbiguous()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            """
+            ### List
+            GET http://localhost/a
+
+            ### list
+            GET http://localhost/b
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "LIST" });
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(
+            ["error: More than one request is titled 'LIST' (lines 2, 5). Give one a '# @name'."],
+            harness.ErrorLines);
+        Assert.Equal(0, harness.HandlersCreated);
+    }
+
+    [Fact]
+    public async Task RunAsync_UnknownNameWithTitles_ListsNamesAndTitles()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            """
+            # @name alpha
+            GET http://localhost/a
+
+            ### Beta request
+            GET http://localhost/b
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "gamma" });
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(
+            [$"error: No request named or titled 'gamma' in {path}. Names and titles: alpha, Beta request."],
+            harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_NoNameTitledRequestsRedirected_ListsTitles()
+    {
+        using Harness harness = new() { IsOutputRedirected = true };
+        string path = await harness.WriteHttpFileAsync(
+            """
+            ### First
+            GET http://localhost/a
+
+            ### Second
+            GET http://localhost/b
+
+            ###
+            GET http://localhost/c
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path));
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(
+            [
+                $"error: {path} has 3 requests; pick one with --name. Names and titles: First, Second. "
+                    + "A request with neither a name nor a title can't be picked from a script; "
+                    + "add '# @name <name>' or '### <title>' above it.",
+            ],
+            harness.ErrorLines);
     }
 
     [Fact]
@@ -360,7 +472,7 @@ public sealed class HttpFileRunnerTests
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(
-            [$"error: No request named 'todos' in {path}, which has no named requests."],
+            [$"error: No request named or titled 'todos' in {path}, which has no named or titled requests."],
             harness.ErrorLines);
     }
 

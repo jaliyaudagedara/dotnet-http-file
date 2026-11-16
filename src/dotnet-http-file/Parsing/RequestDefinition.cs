@@ -16,6 +16,11 @@ internal sealed record RequestDefinition(
     public string? Name { get; init; }
 
     /// <summary>
+    /// The text after <c>###</c> on the separator line above the request, or null when there is none.
+    /// </summary>
+    public string? Title { get; init; }
+
+    /// <summary>
     /// The version written on the request line, or null.
     /// </summary>
     public string? HttpVersion { get; init; }

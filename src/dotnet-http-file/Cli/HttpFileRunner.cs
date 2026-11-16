@@ -40,6 +40,9 @@ internal sealed class HttpFileRunner(
     private static readonly CompositeFormat s_requestNameNotFoundNoneNamedFormat =
         CompositeFormat.Parse(Resources.RequestNameNotFoundNoneNamed);
 
+    private static readonly CompositeFormat s_requestTitleAmbiguousFormat =
+        CompositeFormat.Parse(Resources.RequestTitleAmbiguous);
+
     private static readonly CompositeFormat s_unexpectedErrorFormat =
         CompositeFormat.Parse(Resources.UnexpectedError);
 
@@ -213,6 +216,32 @@ internal sealed class HttpFileRunner(
         }
     }
 
+    // A name wins over a title, so a title never hides a request that has that name.
+    private static RequestDefinition? FindRequest(IReadOnlyList<RequestDefinition> requests, string requestName)
+    {
+        RequestDefinition? named = requests.FirstOrDefault(
+            request => string.Equals(request.Name, requestName, StringComparison.Ordinal));
+        if (named is not null)
+        {
+            return named;
+        }
+
+        RequestDefinition[] titled =
+        [
+            .. requests.Where(
+                request => string.Equals(request.Title, requestName, StringComparison.OrdinalIgnoreCase)),
+        ];
+        if (titled.Length > 1)
+        {
+            throw new HttpFileException(Messages.Format(
+                s_requestTitleAmbiguousFormat,
+                requestName,
+                string.Join(Messages.ListSeparator, titled.Select(request => request.Line))));
+        }
+
+        return titled.SingleOrDefault();
+    }
+
     private RequestDefinition SelectRequest(HttpFile file, string? requestName)
     {
         IReadOnlyList<RequestDefinition> requests = file.Requests;
@@ -221,13 +250,12 @@ internal sealed class HttpFileRunner(
             throw new HttpFileException(Messages.Format(s_noRequestsFormat, file.Path));
         }
 
-        string[] names = [.. requests.Select(request => request.Name).OfType<string>()];
+        string[] names = [.. requests.SelectMany(request => (string?[])[request.Name, request.Title]).OfType<string>()];
         string nameList = string.Join(Messages.ListSeparator, names);
 
         if (requestName is not null)
         {
-            return requests.FirstOrDefault(
-                    request => string.Equals(request.Name, requestName, StringComparison.Ordinal))
+            return FindRequest(requests, requestName)
                 ?? throw new HttpFileException(names.Length == 0
                     ? Messages.Format(s_requestNameNotFoundNoneNamedFormat, requestName, file.Path)
                     : Messages.Format(s_requestNameNotFoundFormat, requestName, file.Path, nameList));

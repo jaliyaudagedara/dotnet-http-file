@@ -78,6 +78,43 @@ public sealed class HttpFileParserTests
     }
 
     [Fact]
+    public void Parse_SeparatorWithText_SetsTitleOfNextRequest()
+    {
+        string content = Crlf(
+            "GET https://a/1",
+            "",
+            "### List existing indexes",
+            "GET https://a/2",
+            "");
+
+        HttpFile file = HttpFileParser.Parse(FilePath, content);
+
+        Assert.Equal([null, "List existing indexes"], file.Requests.Select(request => request.Title));
+    }
+
+    [Theory]
+    [InlineData("###")]
+    [InlineData("###   ")]
+    public void Parse_BareSeparator_LeavesTitleNull(string separator)
+    {
+        string content = Crlf(separator, "GET https://a/2", "");
+
+        HttpFile file = HttpFileParser.Parse(FilePath, content);
+
+        Assert.Null(Assert.Single(file.Requests).Title);
+    }
+
+    [Fact]
+    public void Parse_SeparatorTitle_IsTrimmed()
+    {
+        string content = Crlf("###   Get one  ", "GET https://a/1", "");
+
+        HttpFile file = HttpFileParser.Parse(FilePath, content);
+
+        Assert.Equal("Get one", Assert.Single(file.Requests).Title);
+    }
+
+    [Fact]
     public void Parse_UrlWithoutMethod_DefaultsToGet()
     {
         HttpFile file = HttpFileParser.Parse(FilePath, "https://localhost/items\r\n");

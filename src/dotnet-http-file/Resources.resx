@@ -357,8 +357,8 @@
     <comment>The --help description of the file argument. .http and .rest are file extensions and are not translated.</comment>
   </data>
   <data name="NameOptionDescription" xml:space="preserve">
-    <value>The request to run, as named by '# @name &lt;name&gt;' in the file.</value>
-    <comment>The --help description of --name. # @name is literal .http syntax and is not translated.</comment>
+    <value>The request to run, as named by '# @name &lt;name&gt;' or titled by '### &lt;title&gt;' in the file.</value>
+    <comment>The --help description of --name. # @name and ### are literal .http syntax and is not translated.</comment>
   </data>
   <data name="EnvOptionDescription" xml:space="preserve">
     <value>The environment in http-client.env.json to take variables from.</value>
@@ -397,20 +397,24 @@
     <comment>{0} is the operating system's message for the failed read, which names the path and ends with its own punctuation. The file content is never part of it.</comment>
   </data>
   <data name="RequestNameNotFound" xml:space="preserve">
-    <value>No request named '{0}' in {1}. Named requests: {2}.</value>
-    <comment>{0} is the name given to --name. {1} is the path of the .http file. {2} is the comma-separated list of request names in the file.</comment>
+    <value>No request named or titled '{0}' in {1}. Names and titles: {2}.</value>
+    <comment>{0} is the name given to --name. {1} is the path of the .http file. {2} is the comma-separated list of the request names and the ### titles in the file.</comment>
   </data>
   <data name="RequestNameNotFoundNoneNamed" xml:space="preserve">
-    <value>No request named '{0}' in {1}, which has no named requests.</value>
-    <comment>{0} is the name given to --name. {1} is the path of the .http file.</comment>
+    <value>No request named or titled '{0}' in {1}, which has no named or titled requests.</value>
+    <comment>{0} is the name given to --name. {1} is the path of the .http file. A title is the text after ### on the separator line above a request.</comment>
+  </data>
+  <data name="RequestTitleAmbiguous" xml:space="preserve">
+    <value>More than one request is titled '{0}' (lines {1}). Give one a '# @name'.</value>
+    <comment>{0} is the name given to --name, which matches the title of more than one request. {1} is the comma-separated list of the line numbers of those requests. # @name is literal and is not translated.</comment>
   </data>
   <data name="MultipleRequestsNoName" xml:space="preserve">
-    <value>{0} has {1} requests; pick one with --name. Named requests: {2}. Requests without a name can't be picked from a script; add '# @name &lt;name&gt;' above them.</value>
-    <comment>{0} is the path of the .http file. {1} is the number of requests, always two or more. {2} is the comma-separated list of request names. --name and # @name are literal and are not translated.</comment>
+    <value>{0} has {1} requests; pick one with --name. Names and titles: {2}. A request with neither a name nor a title can't be picked from a script; add '# @name &lt;name&gt;' or '### &lt;title&gt;' above it.</value>
+    <comment>{0} is the path of the .http file. {1} is the number of requests, always two or more. {2} is the comma-separated list of request names and ### titles. --name, # @name and ### are literal and are not translated.</comment>
   </data>
   <data name="MultipleRequestsNoneNamed" xml:space="preserve">
-    <value>{0} has {1} requests and none has a name; add '# @name &lt;name&gt;' above one and pick it with --name.</value>
-    <comment>{0} is the path of the .http file. {1} is the number of requests, always two or more. --name and # @name are literal and are not translated.</comment>
+    <value>{0} has {1} requests and none has a name or title; add '# @name &lt;name&gt;' or '### &lt;title&gt;' above one and pick it with --name.</value>
+    <comment>{0} is the path of the .http file. {1} is the number of requests, always two or more. --name, # @name and ### are literal and are not translated.</comment>
   </data>
   <data name="NoRequests" xml:space="preserve">
     <value>{0} has no requests.</value>

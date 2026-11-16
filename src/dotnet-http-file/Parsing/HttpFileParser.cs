@@ -68,6 +68,7 @@ internal static partial class HttpFileParser
         List<RequestDefinition> requests = [];
         RequestBuilder? current = null;
         string? pendingName = null;
+        string? pendingTitle = null;
 
         foreach (SourceLine line in SplitLines(content))
         {
@@ -78,6 +79,7 @@ internal static partial class HttpFileParser
                 AddRequest(requests, current, content);
                 current = null;
                 pendingName = null;
+                pendingTitle = ParseTitle(text);
                 continue;
             }
 
@@ -115,7 +117,7 @@ internal static partial class HttpFileParser
             }
             else
             {
-                current = ParseRequestLine(text, pendingName, line.Number);
+                current = ParseRequestLine(text, pendingName, pendingTitle, line.Number);
             }
         }
 
@@ -207,6 +209,13 @@ internal static partial class HttpFileParser
         return names[0];
     }
 
+    private static string? ParseTitle(string separatorLine)
+    {
+        string title = separatorLine[Separator.Length..].Trim();
+
+        return title.Length == 0 ? null : title;
+    }
+
     private static FileVariable ParseVariable(string text, int line)
     {
         int assignment = text.IndexOf(VariableAssignment);
@@ -219,7 +228,7 @@ internal static partial class HttpFileParser
         return new FileVariable(name, ParseTemplate(text[(assignment + 1)..].TrimStart(), line), line);
     }
 
-    private static RequestBuilder ParseRequestLine(string text, string? name, int line)
+    private static RequestBuilder ParseRequestLine(string text, string? name, string? title, int line)
     {
         Match match = RequestLinePattern().Match(text);
         Group httpVersion = match.Groups["version"];
@@ -241,6 +250,7 @@ internal static partial class HttpFileParser
 
         return new RequestBuilder(
             name,
+            title,
             method,
             ParseTemplate(url, line),
             httpVersion.Success ? httpVersion.Value : null,
@@ -338,6 +348,7 @@ internal static partial class HttpFileParser
         requests.Add(new RequestDefinition(builder.Method, builder.Url, builder.Headers, builder.Line)
         {
             Name = builder.Name,
+            Title = builder.Title,
             HttpVersion = builder.HttpVersion,
             Body = body,
             BodyLine = bodyLine,
@@ -364,9 +375,17 @@ internal static partial class HttpFileParser
 
     private readonly record struct SourceLine(int Number, int Start, int End);
 
-    private sealed class RequestBuilder(string? name, string method, Template url, string? httpVersion, int line)
+    private sealed class RequestBuilder(
+        string? name,
+        string? title,
+        string method,
+        Template url,
+        string? httpVersion,
+        int line)
     {
         public string? Name { get; } = name;
+
+        public string? Title { get; } = title;
 
         public string Method { get; } = method;
 

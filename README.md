@@ -31,7 +31,7 @@ Try `samples/Basics/Basics.http` (no setup) or `samples/Entra/Entra.http` (needs
 
 | Option | Meaning |
 |---|---|
-| `-n`, `--name <name>` | The request to run, from `# @name <name>`. |
+| `-n`, `--name <name>` | The request to run, from `# @name <name>` or a `### <title>`. |
 | `-e`, `--env <env>` | The environment in `http-client.env.json`. |
 | `--show <full\|body\|headers\|status>` | What to print. `-v` is `--show full`. |
 | `-k`, `--insecure` | Skip server certificate validation. |

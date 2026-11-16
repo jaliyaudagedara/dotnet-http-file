@@ -31,13 +31,17 @@ internal sealed class SpectreRequestPicker(IAnsiConsole console) : IRequestPicke
     }
 
     /// <summary>
-    /// The line shown for <paramref name="request"/>: its name, its method and its URL as written.
+    /// The line shown for <paramref name="request"/>: its name or title, its method and its URL as written.
     /// </summary>
     public static string Label(RequestDefinition request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        string label = string.Join(ColumnSeparator, request.Name ?? UnnamedRequest, request.Method, request.Url.Raw);
+        string label = string.Join(
+            ColumnSeparator,
+            request.Name ?? request.Title ?? UnnamedRequest,
+            request.Method,
+            request.Url.Raw);
 
         // The URL is the text of the file as written, which can hold an escape sequence.
         return ResponseRenderer.WithVisibleControlCharacters(label);

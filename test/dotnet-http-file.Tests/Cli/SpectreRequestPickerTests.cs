@@ -64,6 +64,16 @@ public sealed class SpectreRequestPickerTests
         Assert.Equal(expected, label);
     }
 
+    [Theory]
+    [InlineData("todos", "List", "todos  GET  {{host}}/v1/todos")]
+    [InlineData(null, "List", "List  GET  {{host}}/v1/todos")]
+    public void Label_RequestWithTitle_ShowsNameBeforeTitle(string? name, string title, string expected)
+    {
+        RequestDefinition request = Request(name, "GET", "{{host}}/v1/todos") with { Title = title };
+
+        Assert.Equal(expected, SpectreRequestPicker.Label(request));
+    }
+
     [Fact]
     public void Label_UrlWithControlCharacters_MakesThemVisible()
     {
