@@ -645,6 +645,47 @@ public sealed class VariableResolverTests
         Assert.Equal("Request 'login' has not been sent.", exception.Message);
     }
 
+    [Fact]
+    public async Task ResolveAsync_Override_BeatsFileVariableAndEnvironment()
+    {
+        HttpFile file = Parse(
+            "@a=file",
+            "GET https://localhost/{{a}}");
+        EnvironmentSet environment = CreateEnvironment("dev", ("a", new LiteralEnvironmentValue("env")));
+        VariableResolver resolver = CreateResolver(file, environment, overrides: Overrides(("a", "cli")));
+
+        string url = await ResolveUrlAsync(resolver, file.Requests[0]);
+
+        Assert.Equal("https://localhost/cli", url);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_Override_ReachesFileVariableThatRefersToIt()
+    {
+        HttpFile file = Parse(
+            "@url={{host}}/x",
+            "GET {{url}}");
+        VariableResolver resolver = CreateResolver(file, overrides: Overrides(("host", "https://h")));
+
+        string url = await ResolveUrlAsync(resolver, file.Requests[0]);
+
+        Assert.Equal("https://h/x", url);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_Override_IsLiteral()
+    {
+        HttpFile file = Parse("GET https://localhost/{{a}}");
+        VariableResolver resolver = CreateResolver(file, overrides: Overrides(("a", "{{b}}")));
+
+        string url = await ResolveUrlAsync(resolver, file.Requests[0]);
+
+        Assert.Equal("https://localhost/{{b}}", url);
+    }
+
+    private static Dictionary<string, string> Overrides(params (string Name, string Value)[] values) =>
+        values.ToDictionary(value => value.Name, value => value.Value, StringComparer.Ordinal);
+
     private static HttpFile Parse(params string[] lines) =>
         HttpFileParser.Parse(FilePath, string.Join("\r\n", lines) + "\r\n");
 
@@ -656,7 +697,8 @@ public sealed class VariableResolverTests
         EnvironmentSet? environment = null,
         FakeSecretProvider? provider = null,
         ExchangeStore? exchanges = null,
-        SecretMask? secretMask = null)
+        SecretMask? secretMask = null,
+        IReadOnlyDictionary<string, string>? overrides = null)
     {
         DynamicVariables dynamicVariables = new(
             TimeProvider.System,
@@ -670,7 +712,8 @@ public sealed class VariableResolverTests
             new SecretProviderRegistry(provider is null ? [] : [provider]),
             dynamicVariables,
             exchanges ?? new ExchangeStore(),
-            secretMask ?? new SecretMask());
+            secretMask ?? new SecretMask(),
+            overrides);
     }
 
     private static EnvironmentSet CreateEnvironment(

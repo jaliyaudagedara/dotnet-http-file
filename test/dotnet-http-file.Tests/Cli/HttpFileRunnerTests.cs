@@ -999,6 +999,29 @@ public sealed class HttpFileRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_VarOverridesEnvironment()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        await harness.WriteFileAsync(
+            EnvironmentFileLocator.FileName,
+            """{ "dev": { "Host": "http://bad.invalid" } }""");
+        string path = await harness.WriteHttpFileAsync("GET {{Host}}/x");
+
+        int exitCode = await harness.RunAsync(new RunOptions(path)
+        {
+            EnvironmentName = "dev",
+            Variables = new Dictionary<string, string>
+            {
+                ["Host"] = server.BaseUri.ToString().TrimEnd('/'),
+            },
+        });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(["GET /x HTTP/1.1"], server.Requests.Select(request => request.RequestLine));
+    }
+
+    [Fact]
     public async Task RunAsync_ProcessEnvVariable_UsesTheGivenEnvironment()
     {
         await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);

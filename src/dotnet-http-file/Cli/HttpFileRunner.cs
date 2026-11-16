@@ -159,7 +159,8 @@ internal sealed class HttpFileRunner(
             providers,
             CreateDynamicVariables(filePath),
             exchanges,
-            secretMask);
+            secretMask,
+            options.Variables);
 
         using HttpClient httpClient = ToolHttpClient.Create(createHandler(options.Insecure));
         RequestSender sender = new(httpClient, secretMask, renderer.RenderRedirect);

@@ -220,7 +220,7 @@ internal static partial class HttpFileParser
     {
         int assignment = text.IndexOf(VariableAssignment);
         string name = assignment < 0 ? string.Empty : text[1..assignment].TrimEnd();
-        if (name.Length == 0 || name.Any(char.IsWhiteSpace))
+        if (!FileVariable.IsValidName(name))
         {
             throw new HttpFileException(Messages.Format(s_invalidVariableDefinitionFormat, LeadingToken(text), line));
         }

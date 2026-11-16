@@ -2,7 +2,16 @@ using DotNetHttpFile.Templates;
 
 namespace DotNetHttpFile.Parsing;
 
-internal sealed record FileVariable(string Name, Template Value, int Line);
+internal sealed record FileVariable(string Name, Template Value, int Line)
+{
+    /// <summary>
+    /// Tells whether <paramref name="name"/> can name a variable: it is not empty and has no whitespace.
+    /// </summary>
+    /// <returns>
+    /// True when <paramref name="name"/> is a valid variable name.
+    /// </returns>
+    public static bool IsValidName(string name) => name.Length > 0 && !name.Any(char.IsWhiteSpace);
+}
 
 internal sealed record HttpFile(
     string Path,

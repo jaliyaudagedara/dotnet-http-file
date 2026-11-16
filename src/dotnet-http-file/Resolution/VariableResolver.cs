@@ -17,7 +17,8 @@ internal sealed class VariableResolver(
     SecretProviderRegistry providers,
     DynamicVariables dynamicVariables,
     ExchangeStore exchanges,
-    SecretMask secretMask)
+    SecretMask secretMask,
+    IReadOnlyDictionary<string, string>? overrides = null)
 {
     private static readonly CompositeFormat s_requestNotSentFormat =
         CompositeFormat.Parse(Resources.RequestNotSent);
@@ -83,9 +84,9 @@ internal sealed class VariableResolver(
     /// Resolves <paramref name="template"/>, whose text starts on <paramref name="line"/>.
     /// </summary>
     /// <remarks>
-    /// A name is the file variable defined above <paramref name="line"/>, else the environment value. A file
-    /// variable and a provider value are resolved once per run; a dynamic variable written in the template
-    /// itself is evaluated at each use.
+    /// A name is the <c>--var</c> override, else the file variable defined above <paramref name="line"/>, else
+    /// the environment value. A file variable and a provider value are resolved once per run; a dynamic variable
+    /// written in the template itself is evaluated at each use.
     /// </remarks>
     /// <exception cref="HttpFileException">A variable is not defined or a value could not be read.</exception>
     public async Task<string> ResolveAsync(Template template, int line, CancellationToken cancellationToken = default)
@@ -120,6 +121,11 @@ internal sealed class VariableResolver(
         IReadOnlyDictionary<string, FileVariable> visibleVariables,
         CancellationToken cancellationToken)
     {
+        if (overrides is not null && overrides.TryGetValue(name, out string? overrideValue))
+        {
+            return overrideValue;
+        }
+
         if (visibleVariables.TryGetValue(name, out FileVariable? variable))
         {
             if (!_fileVariableValues.TryGetValue(variable, out string? value))

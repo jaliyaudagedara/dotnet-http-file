@@ -3,6 +3,7 @@ using System.CommandLine.Invocation;
 using System.CommandLine.Parsing;
 using System.Text;
 using DotNetHttpFile.Output;
+using DotNetHttpFile.Parsing;
 using DotNetHttpFile.Resolution;
 
 namespace DotNetHttpFile.Cli;
@@ -26,6 +27,9 @@ internal static class CommandLine
     private const string ShowValueSeparator = "|";
     private const string InsecureOptionName = "--insecure";
     private const string InsecureOptionAlias = "-k";
+    private const string VarOptionName = "--var";
+    private const string VarOptionHelpName = "name=value";
+    private const char VarAssignment = '=';
     private const char OptionPrefix = '-';
 
     private static readonly string[] s_fileExtensions = [".http", ".rest"];
@@ -39,6 +43,9 @@ internal static class CommandLine
 
     private static readonly CompositeFormat s_unrecognizedOptionFormat =
         CompositeFormat.Parse(Resources.UnrecognizedOption);
+
+    private static readonly CompositeFormat s_varOptionInvalidFormat =
+        CompositeFormat.Parse(Resources.VarOptionInvalid);
 
     /// <summary>
     /// Parses <paramref name="args"/> and calls <paramref name="run"/> with what they ask for.
@@ -88,6 +95,15 @@ internal static class CommandLine
             Description = Resources.InsecureOptionDescription,
         };
 
+        Option<string[]> varOption = new(VarOptionName)
+        {
+            Description = Resources.VarOptionDescription,
+            HelpName = VarOptionHelpName,
+            Arity = ArgumentArity.OneOrMore,
+            AllowMultipleArgumentsPerToken = false,
+        };
+        varOption.Validators.Add(ValidateVariables);
+
         RootCommand rootCommand = new(Resources.CommandDescription)
         {
             fileArgument,
@@ -96,6 +112,7 @@ internal static class CommandLine
             verboseOption,
             showOption,
             insecureOption,
+            varOption,
         };
         rootCommand.Validators.Add(commandResult =>
         {
@@ -116,6 +133,7 @@ internal static class CommandLine
                 EnvironmentName = parseResult.GetValue(envOption),
                 ForcedMode = forcedMode,
                 Insecure = parseResult.GetValue(insecureOption),
+                Variables = ToVariables(parseResult.GetResult(varOption)),
             };
 
             return run(options, actionCancellationToken);
@@ -200,6 +218,40 @@ internal static class CommandLine
         return string.Equals(value, ShowStatus, StringComparison.OrdinalIgnoreCase)
             ? OutputMode.Status
             : OutputMode.Full;
+    }
+
+    // The text after the first '=' is never shown: it can be a secret.
+    private static void ValidateVariables(OptionResult result)
+    {
+        foreach (Token token in result.Tokens)
+        {
+            int assignment = token.Value.IndexOf(VarAssignment);
+            if (assignment < 0)
+            {
+                result.AddError(Resources.VarOptionNeedsNameValue);
+            }
+            else if (!FileVariable.IsValidName(token.Value[..assignment]))
+            {
+                result.AddError(Messages.Format(s_varOptionInvalidFormat, token.Value[..assignment]));
+            }
+        }
+    }
+
+    private static Dictionary<string, string>? ToVariables(OptionResult? result)
+    {
+        if (result is null)
+        {
+            return null;
+        }
+
+        Dictionary<string, string> variables = [with(StringComparer.Ordinal)];
+        foreach (Token token in result.Tokens)
+        {
+            int assignment = token.Value.IndexOf(VarAssignment);
+            variables[token.Value[..assignment]] = token.Value[(assignment + 1)..];
+        }
+
+        return variables;
     }
 
     private static void ValidateFile(ArgumentResult result)

@@ -380,6 +380,18 @@
     <value>Skip server certificate validation.</value>
     <comment>The --help description of --insecure.</comment>
   </data>
+  <data name="VarOptionDescription" xml:space="preserve">
+    <value>Sets a variable for this run, over the file and the environment. Can be repeated.</value>
+    <comment>The --help description of --var.</comment>
+  </data>
+  <data name="VarOptionInvalid" xml:space="preserve">
+    <value>--var '{0}' is not name=value.</value>
+    <comment>--var is a literal option name and is not translated. {0} is the text of the --var argument before its first '=', which is not a valid variable name. The text after the '=' is never shown because it can be a secret.</comment>
+  </data>
+  <data name="VarOptionNeedsNameValue" xml:space="preserve">
+    <value>--var needs name=value.</value>
+    <comment>--var is a literal option name and is not translated. Shown when a --var argument has no '='. The argument is not shown because it can be a secret.</comment>
+  </data>
   <data name="VerboseAndShowTogether" xml:space="preserve">
     <value>--verbose and --show cannot be used together.</value>
     <comment>--verbose and --show are literal option names and are not translated.</comment>

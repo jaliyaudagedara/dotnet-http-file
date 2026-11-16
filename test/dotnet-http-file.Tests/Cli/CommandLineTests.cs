@@ -69,6 +69,131 @@ public sealed class CommandLineTests
         Assert.Equal(OutputMode.Full, Assert.Single(harness.Runs).ForcedMode);
     }
 
+    [Fact]
+    public async Task Main_VarRepeated_ParsesEach()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        await harness.InvokeAsync(path, "--var", "a=1", "--var", "b=2");
+
+        Assert.Equal(
+            new Dictionary<string, string>
+            {
+                ["a"] = "1",
+                ["b"] = "2",
+            },
+            Assert.Single(harness.Runs).Variables);
+    }
+
+    [Fact]
+    public async Task Main_VarValueWithEqualsOrEmpty_KeepsIt()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        await harness.InvokeAsync(path, "--var", "a==b", "--var", "c=");
+
+        Assert.Equal(
+            new Dictionary<string, string>
+            {
+                ["a"] = "=b",
+                ["c"] = string.Empty,
+            },
+            Assert.Single(harness.Runs).Variables);
+    }
+
+    [Fact]
+    public async Task Main_VarSameNameTwice_LastWins()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        await harness.InvokeAsync(path, "--var", "a=1", "--var", "a=2");
+
+        Assert.Equal(
+            new Dictionary<string, string>
+            {
+                ["a"] = "2",
+            },
+            Assert.Single(harness.Runs).Variables);
+    }
+
+    [Fact]
+    public async Task Main_VarNamesDifferingInCase_AreSeparate()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        await harness.InvokeAsync(path, "--var", "a=1", "--var", "A=2");
+
+        Assert.Equal(2, Assert.Single(harness.Runs).Variables?.Count);
+    }
+
+    [Fact]
+    public async Task Main_VarBeforeFile_TakesOnlyOneArgument()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync("--var", "a=1", path);
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(path, Assert.Single(harness.Runs).FilePath);
+    }
+
+    [Fact]
+    public async Task Main_NoVar_LeavesVariablesNull()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        await harness.InvokeAsync(path);
+
+        Assert.Null(Assert.Single(harness.Runs).Variables);
+    }
+
+    [Fact]
+    public async Task Main_VarWithoutEquals_ReturnsNotSentWithoutEchoingTheValue()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--var", "s3cretvalue");
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(["error: --var needs name=value."], harness.ErrorLines);
+        Assert.Empty(harness.Runs);
+    }
+
+    [Theory]
+    [InlineData("=1", "error: --var '' is not name=value.")]
+    [InlineData("a b=s3cret", "error: --var 'a b' is not name=value.")]
+    public async Task Main_VarWithInvalidName_ReturnsNotSentNamingOnlyTheName(string token, string expected)
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--var", token);
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal([expected], harness.ErrorLines);
+        Assert.Empty(harness.Runs);
+    }
+
+    [Fact]
+    public async Task Main_VarWithoutValue_ReturnsNotSent()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--var");
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Contains("--var", Assert.Single(harness.ErrorLines), StringComparison.Ordinal);
+        Assert.Empty(harness.Runs);
+    }
+
     [Theory]
     [InlineData("requests.rest")]
     [InlineData("REQUESTS.HTTP")]

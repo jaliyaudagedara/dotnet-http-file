@@ -27,4 +27,9 @@ internal sealed record RunOptions(string FilePath)
     /// True to accept any server certificate (<c>--insecure</c>).
     /// </summary>
     public bool Insecure { get; init; }
+
+    /// <summary>
+    /// The variables given to <c>--var</c>, or null.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? Variables { get; init; }
 }
