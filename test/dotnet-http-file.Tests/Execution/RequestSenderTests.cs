@@ -204,10 +204,8 @@ public sealed class RequestSenderTests
         ResolvedRequest request = new(
             "GET",
             new Uri($"http://127.0.0.1:{port}/echo?key={Secret}"),
-            [])
-        {
-            DisplayUrl = $"http://127.0.0.1:{port}/echo?key=***",
-        };
+            [],
+            $"http://127.0.0.1:{port}/echo?key=***");
 
         HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
             () => sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken));

@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 
 namespace DotNetHttpFile.Environments;
@@ -28,7 +29,7 @@ internal sealed class EnvironmentSet
         environmentFilePath: null,
         selectedName: null,
         availableNames: [],
-        values: new Dictionary<string, EnvironmentValue>(StringComparer.Ordinal));
+        values: ReadOnlyDictionary<string, EnvironmentValue>.Empty);
 
     public string? EnvironmentFilePath { get; }
 

@@ -75,9 +75,8 @@ internal sealed class VariableResolver(
             : await ResolveAsync(request.Body, request.BodyLine ?? request.Line, cancellationToken)
                 .ConfigureAwait(false);
 
-        return new ResolvedRequest(request.Method, url, headers)
+        return new ResolvedRequest(request.Method, url, headers, displayUrl)
         {
-            DisplayUrl = displayUrl,
             HttpVersion = request.HttpVersion,
             Body = body,
             HeaderLines = [.. request.Headers.Select(header => header.Line)],

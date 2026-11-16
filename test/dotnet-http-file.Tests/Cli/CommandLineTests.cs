@@ -154,23 +154,10 @@ public sealed class CommandLineTests
         Assert.Null(Assert.Single(harness.Runs).Variables);
     }
 
-    [Fact]
-    public async Task Main_VarWithoutEquals_ReturnsNotSentWithoutEchoingTheValue()
-    {
-        using Harness harness = new();
-        string path = await harness.WriteFileAsync(HttpFileName);
-
-        int exitCode = await harness.InvokeAsync(path, "--var", "s3cretvalue");
-
-        Assert.Equal(ExitCodes.NotSent, exitCode);
-        Assert.Equal(["error: --var needs name=value."], harness.ErrorLines);
-        Assert.Empty(harness.Runs);
-    }
-
     [Theory]
-    [InlineData("=1", "error: --var '' is not name=value.")]
-    [InlineData("a b=s3cret", "error: --var 'a b' is not name=value.")]
-    public async Task Main_VarWithInvalidName_ReturnsNotSentNamingOnlyTheName(string token, string expected)
+    [InlineData("s3cretvalue")]
+    [InlineData("=s3cretvalue")]
+    public async Task Main_VarWithoutName_ReturnsNotSentWithoutEchoingTheValue(string token)
     {
         using Harness harness = new();
         string path = await harness.WriteFileAsync(HttpFileName);
@@ -178,7 +165,20 @@ public sealed class CommandLineTests
         int exitCode = await harness.InvokeAsync(path, "--var", token);
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
-        Assert.Equal([expected], harness.ErrorLines);
+        Assert.Equal(["error: --var needs name=value."], harness.ErrorLines);
+        Assert.Empty(harness.Runs);
+    }
+
+    [Fact]
+    public async Task Main_VarWithInvalidName_ReturnsNotSentNamingOnlyTheName()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--var", "a b=s3cret");
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(["error: --var 'a b' is not name=value."], harness.ErrorLines);
         Assert.Empty(harness.Runs);
     }
 
@@ -192,6 +192,19 @@ public sealed class CommandLineTests
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Contains("--var", Assert.Single(harness.ErrorLines), StringComparison.Ordinal);
+        Assert.Empty(harness.Runs);
+    }
+
+    [Fact]
+    public async Task Main_BareVarAfterAValidOne_ReturnsNotSentWithoutEchoingAValue()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--var", "a=s3cret", "--var");
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(["error: --var needs name=value."], harness.ErrorLines);
         Assert.Empty(harness.Runs);
     }
 

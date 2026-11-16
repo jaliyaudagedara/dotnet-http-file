@@ -204,7 +204,7 @@ internal sealed class HttpFileRunner(
             s_verbosePlanFormat,
             string.Join(
                 Messages.ListSeparator,
-                plan.Select(request => request.Name ?? request.Title ?? AsWritten(request)))));
+                plan.Select(request => request.DisplayName))));
 
         ExchangeStore exchanges = new();
         VariableResolver resolver = new(
@@ -229,9 +229,9 @@ internal sealed class HttpFileRunner(
             {
                 renderer.RenderError(Messages.Format(
                     s_dependencyFailedFormat,
-                    dependency.Name,
+                    dependency.DisplayName,
                     ResponseRenderer.StatusText(exchange.Response),
-                    target.Name ?? AsWritten(target)));
+                    target.DisplayName));
 
                 return ExitCodes.ErrorStatus;
             }
@@ -275,9 +275,6 @@ internal sealed class HttpFileRunner(
             return exchange;
         }
     }
-
-    // The request line as the file has it: a variable in the URL is not expanded, so no value can show.
-    private static string AsWritten(RequestDefinition request) => $"{request.Method} {request.Url.Raw}";
 
     private static void RenderWrongTenantHint(ResponseRenderer renderer, HttpExchange exchange)
     {
@@ -347,7 +344,13 @@ internal sealed class HttpFileRunner(
             throw new HttpFileException(Messages.Format(s_noRequestsFormat, file.Path));
         }
 
-        string[] names = [.. requests.SelectMany(request => (string?[])[request.Name, request.Title]).OfType<string>()];
+        string[] names =
+        [
+            .. requests
+                .SelectMany(request => (string?[])[request.Name, request.Title])
+                .OfType<string>()
+                .Distinct(StringComparer.Ordinal),
+        ];
         string nameList = string.Join(Messages.ListSeparator, names);
 
         if (requestName is not null)

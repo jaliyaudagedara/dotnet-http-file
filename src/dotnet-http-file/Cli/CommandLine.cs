@@ -213,10 +213,16 @@ internal static class CommandLine
     // The text after the first '=' is never shown: it can be a secret.
     private static void ValidateVariables(OptionResult result)
     {
+        // The arity counts values across every occurrence, so a bare --var after a valid one would pass it.
+        if (result.IdentifierTokenCount > result.Tokens.Count)
+        {
+            result.AddError(Resources.VarOptionNeedsNameValue);
+        }
+
         foreach (Token token in result.Tokens)
         {
             int assignment = token.Value.IndexOf(VarAssignment);
-            if (assignment < 0)
+            if (assignment <= 0)
             {
                 result.AddError(Resources.VarOptionNeedsNameValue);
             }

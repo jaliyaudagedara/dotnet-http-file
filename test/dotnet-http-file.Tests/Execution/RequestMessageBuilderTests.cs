@@ -235,10 +235,7 @@ public sealed class RequestMessageBuilderTests
     [Fact]
     public void Build_HeaderLinesNotParallelToHeaders_ThrowsArgumentException()
     {
-        ResolvedRequest request = new("GET", s_url, [new("Accept", "*/*")])
-        {
-            DisplayUrl = s_url.OriginalString,
-        };
+        ResolvedRequest request = new("GET", s_url, [new("Accept", "*/*")], s_url.OriginalString);
 
         Assert.Throws<ArgumentException>(() => RequestMessageBuilder.Build(request, []));
     }

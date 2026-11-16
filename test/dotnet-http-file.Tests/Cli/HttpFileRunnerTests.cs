@@ -133,6 +133,29 @@ public sealed class HttpFileRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_DependencyFailsForTitledTarget_NamesTheTargetByItsTitle()
+    {
+        using Harness harness = new();
+        harness.CreateHandler = _ => new StubHandler((_, _) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)));
+        string path = await harness.WriteHttpFileAsync(
+            """
+            # @name createToDo
+            POST http://localhost/todos
+
+            ### Get the to-do
+            GET http://localhost/todos/{{createToDo.response.body.$.id}}
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "Get the to-do" });
+
+        Assert.Equal(ExitCodes.ErrorStatus, exitCode);
+        Assert.Equal(
+            ["error: Dependency 'createToDo' returned 404 Not Found; 'Get the to-do' was not sent."],
+            harness.ErrorLines);
+    }
+
+    [Fact]
     public async Task RunAsync_GzipDependency_ChainsFromTheDecodedBody()
     {
         using Harness harness = new();
@@ -437,6 +460,29 @@ public sealed class HttpFileRunnerTests
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(
             [$"error: No request named or titled 'gamma' in {path}. Names and titles: alpha, Beta request."],
+            harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_UnknownNameWithTitleEqualToName_ListsItOnce()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            """
+            ### alpha
+            # @name alpha
+            GET http://localhost/a
+
+            ### Beta
+            # @name beta
+            GET http://localhost/b
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "gamma" });
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(
+            [$"error: No request named or titled 'gamma' in {path}. Names and titles: alpha, beta, Beta."],
             harness.ErrorLines);
     }
 
@@ -1557,96 +1603,6 @@ public sealed class HttpFileRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_Verbose_NeverPrintsTheToken()
-    {
-        const string AccessToken = "tok-xyz";
-        using Harness harness = new();
-        harness.CreateProviders = log => new SecretProviderRegistry(
-        [
-            new EntraAccessTokenProvider(new Lazy<TokenCredential>(new FakeTokenCredential(AccessToken)), log),
-        ]);
-        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(JsonResponse("{}")));
-        await harness.WriteFileAsync(
-            EnvironmentFileLocator.FileName,
-            """{ "dev": { "token": { "provider": "EntraAccessToken", "scope": "api://todos/.default" } } }""");
-        string path = await harness.WriteHttpFileAsync(
-            """
-            GET http://localhost/todos?access_token={{token}}
-            Authorization: Bearer {{token}}
-            """);
-
-        int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev", Verbose = true });
-
-        Assert.Equal(ExitCodes.Success, exitCode);
-        Assert.Contains(
-            harness.ErrorLines,
-            line => line.StartsWith("verbose: Token for api://todos/.default: tenant unknown", StringComparison.Ordinal));
-        Assert.DoesNotContain(AccessToken, harness.Output.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain(AccessToken, harness.Error.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            AccessToken,
-            Encoding.UTF8.GetString(harness.StandardOutput.ToArray()),
-            StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RunAsync_VerboseKeyVaultFirst_StillLogsTheCredential()
-    {
-        using Harness harness = new();
-        Lazy<TokenCredential> credential = new(new FakeTokenCredential());
-        SecretClient client = Substitute.For<SecretClient>();
-        client
-            .GetSecretAsync("api-key", null, Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                // DefaultAzureCredential reports its credential once, on the first token, which Key Vault gets here.
-                AzureIdentityEvents.RaiseCredentialSelected("Azure.Identity.AzureCliCredential");
-
-                return Response.FromValue(
-                    SecretModelFactory.KeyVaultSecret(new SecretProperties("api-key"), "vault-value"),
-                    Substitute.For<Response>());
-            });
-        harness.CreateProviders = log => new SecretProviderRegistry(
-        [
-            new AzureKeyVaultProvider(credential, (_, _) => client, log),
-            new EntraAccessTokenProvider(credential, log),
-        ]);
-        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(JsonResponse("{}")));
-        await harness.WriteFileAsync(
-            EnvironmentFileLocator.FileName,
-            """
-            {
-              "dev": {
-                "apiKey": {
-                  "provider": "AzureKeyVault",
-                  "resourceId": "/subscriptions/x/resourceGroups/y/providers/Microsoft.KeyVault/vaults/my-vault",
-                  "secretName": "api-key"
-                },
-                "token": { "provider": "EntraAccessToken", "scope": "api://todos/.default" }
-              }
-            }
-            """);
-        string path = await harness.WriteHttpFileAsync(
-            """
-            GET http://localhost/todos?key={{apiKey}}
-            Authorization: Bearer {{token}}
-            """);
-
-        await harness.RunAsync(new RunOptions(path)
-        {
-            EnvironmentName = "dev",
-            Verbose = true,
-            ForcedMode = OutputMode.Status,
-        });
-
-        Assert.Collection(
-            harness.ErrorLines.Where(line => line.StartsWith("verbose: Credential", StringComparison.Ordinal)
-                || line.StartsWith("verbose: Token", StringComparison.Ordinal)),
-            line => Assert.Equal("verbose: Credential: AzureCliCredential", line),
-            line => Assert.StartsWith("verbose: Token for api://todos/.default: ", line, StringComparison.Ordinal));
-    }
-
-    [Fact]
     public async Task RunAsync_WrongTenant401WithEntraToken_PrintsHint()
     {
         using Harness harness = new();
@@ -1748,6 +1704,107 @@ public sealed class HttpFileRunnerTests
 
         Assert.Equal(ExitCodes.ErrorStatus, exitCode);
         Assert.Contains("tenantId", harness.Error.Output, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The runs whose providers listen for Azure.Identity events, or that raise one. They share the process-wide
+    /// event source, so they run in <see cref="AzureIdentityEventGroup"/>.
+    /// </summary>
+    [Collection(AzureIdentityEventGroup.Name)]
+    public sealed class AzureIdentityEventTests
+    {
+        [Fact]
+        public async Task RunAsync_Verbose_NeverPrintsTheToken()
+        {
+            const string AccessToken = "tok-xyz";
+            using Harness harness = new();
+            harness.CreateProviders = log => new SecretProviderRegistry(
+            [
+                new EntraAccessTokenProvider(new Lazy<TokenCredential>(new FakeTokenCredential(AccessToken)), log),
+            ]);
+            harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(JsonResponse("{}")));
+            await harness.WriteFileAsync(
+                EnvironmentFileLocator.FileName,
+                """{ "dev": { "token": { "provider": "EntraAccessToken", "scope": "api://todos/.default" } } }""");
+            string path = await harness.WriteHttpFileAsync(
+                """
+                GET http://localhost/todos?access_token={{token}}
+                Authorization: Bearer {{token}}
+                """);
+
+            int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev", Verbose = true });
+
+            Assert.Equal(ExitCodes.Success, exitCode);
+            Assert.Contains(
+                harness.ErrorLines,
+                line => line.StartsWith(
+                    "verbose: Token for api://todos/.default: tenant unknown",
+                    StringComparison.Ordinal));
+            Assert.DoesNotContain(AccessToken, harness.Output.Output, StringComparison.Ordinal);
+            Assert.DoesNotContain(AccessToken, harness.Error.Output, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                AccessToken,
+                Encoding.UTF8.GetString(harness.StandardOutput.ToArray()),
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task RunAsync_VerboseKeyVaultFirst_StillLogsTheCredential()
+        {
+            using Harness harness = new();
+            Lazy<TokenCredential> credential = new(new FakeTokenCredential());
+            SecretClient client = Substitute.For<SecretClient>();
+            client
+                .GetSecretAsync("api-key", null, Arg.Any<CancellationToken>())
+                .Returns(_ =>
+                {
+                    // DefaultAzureCredential reports its credential once, on the first token, which Key Vault
+                    // gets here.
+                    AzureIdentityEvents.RaiseCredentialSelected("Azure.Identity.AzureCliCredential");
+
+                    return Response.FromValue(
+                        SecretModelFactory.KeyVaultSecret(new SecretProperties("api-key"), "vault-value"),
+                        Substitute.For<Response>());
+                });
+            harness.CreateProviders = log => new SecretProviderRegistry(
+            [
+                new AzureKeyVaultProvider(credential, (_, _) => client, log),
+                new EntraAccessTokenProvider(credential, log),
+            ]);
+            harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(JsonResponse("{}")));
+            await harness.WriteFileAsync(
+                EnvironmentFileLocator.FileName,
+                """
+                {
+                  "dev": {
+                    "apiKey": {
+                      "provider": "AzureKeyVault",
+                      "resourceId": "/subscriptions/x/resourceGroups/y/providers/Microsoft.KeyVault/vaults/my-vault",
+                      "secretName": "api-key"
+                    },
+                    "token": { "provider": "EntraAccessToken", "scope": "api://todos/.default" }
+                  }
+                }
+                """);
+            string path = await harness.WriteHttpFileAsync(
+                """
+                GET http://localhost/todos?key={{apiKey}}
+                Authorization: Bearer {{token}}
+                """);
+
+            await harness.RunAsync(new RunOptions(path)
+            {
+                EnvironmentName = "dev",
+                Verbose = true,
+                ForcedMode = OutputMode.Status,
+            });
+
+            Assert.Collection(
+                harness.ErrorLines.Where(line => line.StartsWith("verbose: Credential", StringComparison.Ordinal)
+                    || line.StartsWith("verbose: Token", StringComparison.Ordinal)),
+                line => Assert.Equal("verbose: Credential: AzureCliCredential", line),
+                line => Assert.StartsWith("verbose: Token for api://todos/.default: ", line, StringComparison.Ordinal));
+        }
     }
 
     // Windows refuses a second open of a file held without sharing; elsewhere the file loses its read permission.

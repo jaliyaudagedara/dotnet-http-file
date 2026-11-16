@@ -34,4 +34,17 @@ internal sealed record RequestDefinition(
     /// The line the body starts on, or null when the request has no body.
     /// </summary>
     public int? BodyLine { get; init; }
+
+    /// <summary>
+    /// The name, else the title, or null when the request has neither.
+    /// </summary>
+    public string? NameOrTitle => Name ?? Title;
+
+    /// <summary>
+    /// What the tool calls the request: <see cref="NameOrTitle"/>, else the request line as written.
+    /// </summary>
+    /// <remarks>
+    /// The request line is the text of the file, so a variable in the URL is not expanded and no value can show.
+    /// </remarks>
+    public string DisplayName => NameOrTitle ?? $"{Method} {Url.Raw}";
 }

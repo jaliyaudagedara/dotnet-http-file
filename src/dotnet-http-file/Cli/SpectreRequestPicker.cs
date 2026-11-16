@@ -39,7 +39,7 @@ internal sealed class SpectreRequestPicker(IAnsiConsole console) : IRequestPicke
 
         string label = string.Join(
             ColumnSeparator,
-            request.Name ?? request.Title ?? UnnamedRequest,
+            request.NameOrTitle ?? UnnamedRequest,
             request.Method,
             request.Url.Raw);
 

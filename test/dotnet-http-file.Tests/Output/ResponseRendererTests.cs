@@ -368,9 +368,8 @@ public sealed class ResponseRendererTests
     public async Task RenderFull_RequestWithBody_DoesNotPrintRequestBody()
     {
         using Harness harness = new(OutputMode.Full);
-        ResolvedRequest request = new("POST", new Uri(ToDosUrl), [])
+        ResolvedRequest request = new("POST", new Uri(ToDosUrl), [], ToDosUrl)
         {
-            DisplayUrl = ToDosUrl,
             Body = "request-body-text",
         };
 
@@ -823,10 +822,7 @@ public sealed class ResponseRendererTests
         string method = "GET",
         string displayUrl = ToDosUrl,
         IReadOnlyList<KeyValuePair<string, string>>? headers = null) =>
-        new(method, new Uri(ToDosUrl), headers ?? [])
-        {
-            DisplayUrl = displayUrl,
-        };
+        new(method, new Uri(ToDosUrl), headers ?? [], displayUrl);
 
     private static ReceivedResponse Response(string? contentType, byte[] body, double elapsedMilliseconds = 12) =>
         new(

@@ -13,9 +13,12 @@ internal static class ResolvedRequestFactory
         string? body = null,
         string? httpVersion = null,
         params (string Name, string Value, int Line)[] headers) =>
-        new(method, url, [.. headers.Select(header => KeyValuePair.Create(header.Name, header.Value))])
+        new(
+            method,
+            url,
+            [.. headers.Select(header => KeyValuePair.Create(header.Name, header.Value))],
+            url.OriginalString)
         {
-            DisplayUrl = url.OriginalString,
             HttpVersion = httpVersion,
             Body = body,
             HeaderLines = [.. headers.Select(header => header.Line)],

@@ -10,14 +10,16 @@ namespace DotNetHttpFile.Execution;
 /// knows. Print <see cref="DisplayUrl"/> instead.
 /// </param>
 /// <param name="Headers">The headers in file order.</param>
-internal sealed record ResolvedRequest(string Method, Uri Url, IReadOnlyList<KeyValuePair<string, string>> Headers)
+/// <param name="DisplayUrl">
+/// The only URL to print. For a request from the file, the URL as resolved with provider-resolved values masked.
+/// For a redirect, the location the server sent, masked only when it takes parts of the request URL.
+/// </param>
+internal sealed record ResolvedRequest(
+    string Method,
+    Uri Url,
+    IReadOnlyList<KeyValuePair<string, string>> Headers,
+    string DisplayUrl)
 {
-    /// <summary>
-    /// The only URL to print. For a request from the file, the URL as resolved with provider-resolved values
-    /// masked. For a redirect, the location the server sent, masked only when it takes parts of the request URL.
-    /// </summary>
-    public required string DisplayUrl { get; init; }
-
     /// <summary>
     /// The version written on the request line, or null.
     /// </summary>

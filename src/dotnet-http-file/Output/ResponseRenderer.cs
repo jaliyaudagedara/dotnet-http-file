@@ -53,7 +53,7 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         long milliseconds = Milliseconds(exchange.Response);
         string line = string.Create(
             CultureInfo.InvariantCulture,
-            $"\u2192 {request.Name}  {sent.Method} {sent.DisplayUrl}  {status}  {milliseconds} ms");
+            $"\u2192 {request.DisplayName}  {sent.Method} {sent.DisplayUrl}  {status}  {milliseconds} ms");
 
         WriteMaskedLines(mode == OutputMode.Full ? console.Output : console.Error, line, s_dependencyStyle);
     }

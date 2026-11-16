@@ -35,6 +35,7 @@ internal sealed class DiagnosticLog(IAnsiConsole error, SecretMask? mask = null)
         }
 
         string line = Messages.Format(s_outputVerboseFormat, message);
+
         // Masked before the line breaks are made visible, so a secret that holds one still matches.
         ConsoleText.WriteLine(error, mask?.Apply(line) ?? line, s_style);
     }

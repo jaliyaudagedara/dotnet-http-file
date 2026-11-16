@@ -22,6 +22,14 @@
     <PackageProjectUrl>https://github.com/jaliyaudagedara/dotnet-http-file</PackageProjectUrl>
     <RepositoryUrl>https://github.com/jaliyaudagedara/dotnet-http-file.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
+    <PackageReleaseNotes>
+0.2.0
+- --name also matches a request's ### title.
+- --var name=value sets a variable for the run. It can be repeated.
+- -v/--verbose now logs diagnostics to standard error and combines with --show. It no longer means --show full.
+- A hint is shown when a request fails with InvalidAuthenticationTokenTenant.
+- A Content-Type header on a request without a body is left out quietly.
+    </PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
