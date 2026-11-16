@@ -437,7 +437,7 @@
     <comment>The --help description of --insecure. In the third person, like the other option descriptions that start with a verb.</comment>
   </data>
   <data name="VarOptionDescription" xml:space="preserve">
-    <value>Sets a variable for this run, over the file and the environment. Can be repeated.</value>
+    <value>Sets a variable for this run, over the file and the environment. Can be repeated. Values are not masked; put secrets in the environment file.</value>
     <comment>The --help description of --var.</comment>
   </data>
   <data name="VarOptionInvalid" xml:space="preserve">

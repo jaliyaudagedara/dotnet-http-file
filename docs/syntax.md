@@ -14,7 +14,8 @@ picked with or without a `# @name`. If two requests share the matched title, the
 ## Request dependencies
 
 If the selected request uses `{{x.response...}}` or `{{x.request...}}`, request `x` is sent first, on every
-run, whatever its method. A non-2xx dependency stops the run with exit code 1.
+run, whatever its method. A non-2xx dependency stops the run with exit code 1. A file variable overridden
+with `--var` is not followed, so a request that only its definition refers to is not sent.
 
 ```http
 # @name createToDo

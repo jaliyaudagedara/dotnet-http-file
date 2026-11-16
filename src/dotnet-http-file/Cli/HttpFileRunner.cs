@@ -200,7 +200,7 @@ internal sealed class HttpFileRunner(
 
         RequestDefinition target = await SelectRequestAsync(file, options.RequestName, cancellationToken)
             .ConfigureAwait(false);
-        IReadOnlyList<RequestDefinition> plan = DependencyPlanner.Plan(file, target);
+        IReadOnlyList<RequestDefinition> plan = DependencyPlanner.Plan(file, target, options.Variables);
         log.Write(Messages.Format(
             s_verbosePlanFormat,
             string.Join(

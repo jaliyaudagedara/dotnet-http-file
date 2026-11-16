@@ -603,6 +603,19 @@ public sealed class CommandLineTests
     }
 
     [Fact]
+    public async Task Main_Help_SaysVarValuesAreNotMasked()
+    {
+        using Harness harness = new();
+
+        await harness.InvokeAsync("--help");
+
+        Assert.Contains(
+            "Values are not masked; put secrets in the environment file.",
+            harness.Output.Output,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Main_Version_PrintsVersionAndReturnsSuccess()
     {
         using Harness harness = new();

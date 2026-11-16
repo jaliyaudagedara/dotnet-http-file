@@ -1152,6 +1152,37 @@ public sealed class HttpFileRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_VarOverridesFileVariableThatRefersToARequest_DoesNotSendThatRequest()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            $$$"""
+            # @name getToDos
+            GET {{{server.BaseUri}}}json
+
+            ###
+
+            @id = {{getToDos.response.body.$.items[1].id}}
+
+            # @name getToDo
+            GET {{{server.BaseUri}}}todos/{{id}}
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path)
+        {
+            RequestName = "getToDo",
+            Variables = new Dictionary<string, string>
+            {
+                ["id"] = "9",
+            },
+        });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(["GET /todos/9 HTTP/1.1"], server.Requests.Select(request => request.RequestLine));
+    }
+
+    [Fact]
     public async Task RunAsync_ProcessEnvVariable_UsesTheGivenEnvironment()
     {
         await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);

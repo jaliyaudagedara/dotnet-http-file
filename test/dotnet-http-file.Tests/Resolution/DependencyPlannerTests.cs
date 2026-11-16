@@ -283,6 +283,83 @@ public sealed class DependencyPlannerTests
         Assert.Equal("Request 'Login' referenced on line 5 does not exist.", exception.Message);
     }
 
+    [Fact]
+    public void Plan_OverriddenFileVariable_LeavesOutTheRequestOnlyItsDefinitionRefersTo()
+    {
+        HttpFile file = Parse(
+            "# @name login",
+            "POST https://localhost/login",
+            "",
+            "###",
+            "@token = {{login.response.body.$.token}}",
+            "# @name items",
+            "GET https://localhost/items",
+            "Authorization: Bearer {{token}}");
+        Dictionary<string, string> overrides = new() { ["token"] = "given" };
+
+        IReadOnlyList<RequestDefinition> plan = DependencyPlanner.Plan(file, Request(file, "items"), overrides);
+
+        Assert.Equal(["items"], plan.Select(request => request.Name));
+    }
+
+    [Fact]
+    public void Plan_OverriddenNestedFileVariable_LeavesOutTheRequestOnlyItsDefinitionRefersTo()
+    {
+        HttpFile file = Parse(
+            "# @name login",
+            "POST https://localhost/login",
+            "",
+            "###",
+            "@token = {{login.response.body.$.token}}",
+            "@authorization = Bearer {{token}}",
+            "# @name items",
+            "GET https://localhost/items",
+            "Authorization: {{authorization}}");
+        Dictionary<string, string> overrides = new() { ["token"] = "given" };
+
+        IReadOnlyList<RequestDefinition> plan = DependencyPlanner.Plan(file, Request(file, "items"), overrides);
+
+        Assert.Equal(["items"], plan.Select(request => request.Name));
+    }
+
+    [Fact]
+    public void Plan_OverriddenFileVariableAndDirectReference_KeepsTheDependency()
+    {
+        HttpFile file = Parse(
+            "# @name login",
+            "POST https://localhost/login",
+            "",
+            "###",
+            "@token = {{login.response.body.$.token}}",
+            "# @name items",
+            "GET https://localhost/items?user={{login.response.body.$.user}}",
+            "Authorization: Bearer {{token}}");
+        Dictionary<string, string> overrides = new() { ["token"] = "given" };
+
+        IReadOnlyList<RequestDefinition> plan = DependencyPlanner.Plan(file, Request(file, "items"), overrides);
+
+        Assert.Equal(["login", "items"], plan.Select(request => request.Name));
+    }
+
+    [Fact]
+    public void Plan_OverrideOfAnotherName_StillFollowsTheFileVariable()
+    {
+        HttpFile file = Parse(
+            "# @name login",
+            "POST https://localhost/login",
+            "",
+            "###",
+            "@token = {{login.response.body.$.token}}",
+            "# @name items",
+            "GET https://localhost/items",
+            "Authorization: Bearer {{token}}");
+        Dictionary<string, string> overrides = new() { ["Token"] = "given" };
+
+        IReadOnlyList<RequestDefinition> plan = DependencyPlanner.Plan(file, Request(file, "items"), overrides);
+
+        Assert.Equal(["login", "items"], plan.Select(request => request.Name));
+    }
+
     private static HttpFile Parse(params string[] lines) =>
         HttpFileParser.Parse(FilePath, string.Join("\r\n", lines) + "\r\n");
 
