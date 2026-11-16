@@ -31,8 +31,7 @@ internal static class RedirectPolicy
         ArgumentNullException.ThrowIfNull(response);
         ArgumentNullException.ThrowIfNull(secretMask);
 
-        Uri? location = GetLocation(request.Url, response);
-        if (location is null)
+        if (GetLocation(request.Url, response) is not (Uri location, bool takesRequestParts))
         {
             return null;
         }
@@ -66,12 +65,13 @@ internal static class RedirectPolicy
             Url = location,
             Headers = headers,
             Body = isChangedToGet ? null : request.Body,
-            DisplayUrl = secretMask.Apply(location.AbsoluteUri),
+            DisplayUrl = takesRequestParts ? secretMask.Apply(location.AbsoluteUri) : location.AbsoluteUri,
             HeaderLines = headerLines,
         };
     }
 
-    private static Uri? GetLocation(Uri requestUrl, HttpResponseMessage response)
+    // TakesRequestParts says whether the location holds parts of the request URL, which may be secrets.
+    private static (Uri Location, bool TakesRequestParts)? GetLocation(Uri requestUrl, HttpResponseMessage response)
     {
         bool isRedirect = response.StatusCode
             is HttpStatusCode.MultipleChoices
@@ -87,22 +87,25 @@ internal static class RedirectPolicy
             return null;
         }
 
+        bool takesRequestParts = false;
         if (!location.IsAbsoluteUri)
         {
             location = new Uri(requestUrl, location);
+            takesRequestParts = true;
         }
 
         // RFC 9110 section 10.2.2: a location without a fragment inherits the one of the request.
         if (requestUrl.Fragment.Length > 0 && location.Fragment.Length == 0)
         {
             location = new UriBuilder(location) { Fragment = requestUrl.Fragment }.Uri;
+            takesRequestParts = true;
         }
 
         // As HttpClient: never from https down to http, and to no other scheme.
         bool isAllowedScheme = location.Scheme == Uri.UriSchemeHttps
             || (location.Scheme == Uri.UriSchemeHttp && requestUrl.Scheme != Uri.UriSchemeHttps);
 
-        return isAllowedScheme ? location : null;
+        return isAllowedScheme ? (location, takesRequestParts) : null;
     }
 
     // As HttpClient and browsers: a POST becomes a GET on 300, 301 and 302, and so does every method but GET

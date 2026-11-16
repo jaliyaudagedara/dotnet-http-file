@@ -166,7 +166,7 @@ internal sealed class HttpFileRunner(
             secretMask);
 
         using HttpClient httpClient = ToolHttpClient.Create(createHandler(options.Insecure));
-        RequestSender sender = new(httpClient, secretMask, renderer.RenderNotice);
+        RequestSender sender = new(httpClient, secretMask, renderer.RenderRedirect);
 
         foreach (RequestDefinition dependency in plan.Take(plan.Count - 1))
         {

@@ -63,21 +63,12 @@ internal static class BodyFormatter
     }
 
     /// <summary>
-    /// Decodes a text body, hides secrets in it with <paramref name="mask"/> and indents it when it is JSON or
-    /// XML. A body that is not valid for its type, or that cannot be rewritten without changing it, is
-    /// returned as it was decoded, masked.
+    /// Decodes a text body and indents it when it is JSON or XML. A body that is not valid for its type, or that
+    /// cannot be rewritten without changing it, is returned as it was decoded.
     /// </summary>
-    /// <remarks>
-    /// Rewriting a body changes how its values are escaped, so a mask over the rewritten text alone would miss
-    /// a secret that the body spells one way and the writer another. The text is therefore masked as it was
-    /// received, which catches a secret written out verbatim, and every decoded string of the parsed body is
-    /// masked again before it is written. The caller still masks the returned text as a whole.
-    /// </remarks>
-    public static string FormatForDisplay(string? contentType, ReadOnlyMemory<byte> body, Func<string, string> mask)
+    public static string FormatForDisplay(string? contentType, ReadOnlyMemory<byte> body)
     {
-        ArgumentNullException.ThrowIfNull(mask);
-
-        string text = mask(BodyText.Decode(contentType, body));
+        string text = BodyText.Decode(contentType, body);
         string? mediaType = MediaType(contentType);
         if (mediaType is null)
         {
@@ -86,12 +77,12 @@ internal static class BodyFormatter
 
         if (IsJson(mediaType))
         {
-            return IndentJson(text, mask) ?? text;
+            return IndentJson(text) ?? text;
         }
 
         if (IsXml(mediaType))
         {
-            return IndentXml(text, mask) ?? text;
+            return IndentXml(text) ?? text;
         }
 
         return text;
@@ -108,7 +99,7 @@ internal static class BodyFormatter
         mediaType.Equals(XmlMediaType, StringComparison.OrdinalIgnoreCase)
         || mediaType.EndsWith(XmlSuffix, StringComparison.OrdinalIgnoreCase);
 
-    private static string? IndentJson(string text, Func<string, string> mask)
+    private static string? IndentJson(string text)
     {
         // A repeated property name fails as JsonException while parsing. An escaped surrogate without its pair
         // fails as InvalidOperationException, and only when the string is read.
@@ -119,7 +110,8 @@ internal static class BodyFormatter
             ArrayBufferWriter<byte> buffer = new();
             using (Utf8JsonWriter writer = new(buffer, s_jsonWriterOptions))
             {
-                WriteMasked(writer, document.RootElement, mask);
+                // Writes each number with the text it was received with.
+                document.RootElement.WriteTo(writer);
             }
 
             return Encoding.UTF8.GetString(buffer.WrittenSpan);
@@ -130,44 +122,7 @@ internal static class BodyFormatter
         }
     }
 
-    // The parser refuses a document nested deeper than its default limit of 64, which bounds this recursion.
-    private static void WriteMasked(Utf8JsonWriter writer, JsonElement element, Func<string, string> mask)
-    {
-        switch (element.ValueKind)
-        {
-            case JsonValueKind.Object:
-                writer.WriteStartObject();
-                foreach (JsonProperty property in element.EnumerateObject())
-                {
-                    writer.WritePropertyName(mask(property.Name));
-                    WriteMasked(writer, property.Value, mask);
-                }
-
-                writer.WriteEndObject();
-                break;
-
-            case JsonValueKind.Array:
-                writer.WriteStartArray();
-                foreach (JsonElement item in element.EnumerateArray())
-                {
-                    WriteMasked(writer, item, mask);
-                }
-
-                writer.WriteEndArray();
-                break;
-
-            case JsonValueKind.String:
-                writer.WriteStringValue(mask(element.GetString() ?? string.Empty));
-                break;
-
-            default:
-                // Writes a number with the text it was received with.
-                element.WriteTo(writer);
-                break;
-        }
-    }
-
-    private static string? IndentXml(string text, Func<string, string> mask)
+    private static string? IndentXml(string text)
     {
         try
         {
@@ -179,7 +134,6 @@ internal static class BodyFormatter
             using StringReader textReader = new(text);
             using XmlReader xmlReader = XmlReader.Create(textReader, BodyText.XmlReaderSettings);
             XDocument document = XDocument.Load(xmlReader);
-            MaskValues(document, mask);
 
             StringBuilder builder = new();
             if (document.Declaration is not null)
@@ -214,79 +168,5 @@ internal static class BodyFormatter
         }
 
         return false;
-    }
-
-    private static void MaskValues(XDocument document, Func<string, string> mask)
-    {
-        foreach (XElement element in document.Descendants().ToArray())
-        {
-            foreach (XAttribute attribute in element.Attributes())
-            {
-                if (!attribute.IsNamespaceDeclaration)
-                {
-                    attribute.Value = mask(attribute.Value);
-                }
-            }
-
-            MaskText(element, mask);
-        }
-    }
-
-    // Text and CDATA sections that follow one another read as one text, so they are masked as one. The child
-    // list is rebuilt and put back in one step: taking nodes out one at a time walks the list on every call.
-    private static void MaskText(XElement element, Func<string, string> mask)
-    {
-        List<XNode> nodes = [];
-        List<XText> run = [];
-        bool isRunReplaced = false;
-        foreach (XNode node in element.Nodes())
-        {
-            if (node is XText content)
-            {
-                run.Add(content);
-                continue;
-            }
-
-            isRunReplaced |= AddMaskedRun(nodes, run, mask);
-            run.Clear();
-            nodes.Add(node);
-        }
-
-        isRunReplaced |= AddMaskedRun(nodes, run, mask);
-        if (isRunReplaced)
-        {
-            element.ReplaceNodes(nodes);
-        }
-    }
-
-    /// <summary>Adds the masked run to <paramref name="nodes"/>. Returns whether it added a new node.</summary>
-    private static bool AddMaskedRun(List<XNode> nodes, List<XText> run, Func<string, string> mask)
-    {
-        if (run.Count == 1)
-        {
-            // Changing the value in place keeps a CDATA section a CDATA section.
-            run[0].Value = mask(run[0].Value);
-            nodes.Add(run[0]);
-
-            return false;
-        }
-
-        if (run.Count == 0)
-        {
-            return false;
-        }
-
-        string text = string.Concat(run.Select(content => content.Value));
-        string masked = mask(text);
-        if (masked == text)
-        {
-            nodes.AddRange(run);
-
-            return false;
-        }
-
-        nodes.Add(new XText(masked));
-
-        return true;
     }
 }

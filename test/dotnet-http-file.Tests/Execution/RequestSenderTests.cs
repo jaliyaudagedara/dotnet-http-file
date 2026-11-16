@@ -519,7 +519,33 @@ public sealed class RequestSenderTests
         Assert.Empty(followed.HeaderValues(CookieHeader));
         Assert.Empty(followed.HeaderValues(ApiKeyHeader));
         Assert.Equal(["plain"], followed.HeaderValues(PlainHeader));
-        Assert.Equal([$"Redirected to {otherOrigin.BaseUri}echo?key=*** (302)"], redirects);
+        Assert.Equal([$"Redirected to {otherOrigin.BaseUri}echo?key={Secret} (302)"], redirects);
+    }
+
+    [Theory]
+    [InlineData($"http://stub.test/{Secret}/a", "b", "http://stub.test/***/b")]
+    [InlineData($"http://stub.test/a#{Secret}", "http://other.test/b", "http://other.test/b#***")]
+    public async Task SendAsync_RedirectLocationTakesPartsOfTheRequestUrl_ReportsThemMasked(
+        string url,
+        string location,
+        string expected)
+    {
+        int sendCount = 0;
+        using HttpClient httpClient = CreateStubClient((_, _) =>
+            Task.FromResult(++sendCount == 1
+                ? Redirect(HttpStatusCode.Found, location)
+                : new HttpResponseMessage(HttpStatusCode.OK)));
+        SecretMask secretMask = new();
+        secretMask.Add(Secret);
+        List<string> redirects = [];
+        RequestSender sender = new(httpClient, secretMask, redirects.Add);
+
+        await sender.SendAsync(
+            ResolvedRequestFactory.Create("GET", new Uri(url)),
+            [],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal([$"Redirected to {expected} (302)"], redirects);
     }
 
     [Fact]

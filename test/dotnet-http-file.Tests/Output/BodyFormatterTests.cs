@@ -1,7 +1,5 @@
-using System.Diagnostics;
 using System.Text;
 using DotNetHttpFile.Output;
-using DotNetHttpFile.Resolution;
 
 namespace DotNetHttpFile.Tests.Output;
 
@@ -114,6 +112,26 @@ public sealed class BodyFormatterTests
     }
 
     [Fact]
+    public void FormatForDisplay_JsonEscapesInNamesAndStrings_AreWrittenDecoded()
+    {
+        string text = Format("application/json", $$"""{"a{{EscapedB}}c":["x-a{{EscapedB}}c-y","q\"\\\/"]}""");
+
+        Assert.Equal(
+            string.Join(s_newLine, "{", "  \"abc\": [", "    \"x-abc-y\",", "    \"q\\\"\\\\/\"", "  ]", "}"),
+            text);
+    }
+
+    [Fact]
+    public void FormatForDisplay_JsonRepeatedNameAfterDecoding_ReturnsAsIs()
+    {
+        string body = $$"""{"abc":1,"a{{EscapedB}}c":2}""";
+
+        string text = Format("application/json", body);
+
+        Assert.Equal(body, text);
+    }
+
+    [Fact]
     public void FormatForDisplay_InvalidJson_ReturnsAsIs()
     {
         string text = Format("application/json", """{"id": 1,""");
@@ -151,6 +169,24 @@ public sealed class BodyFormatterTests
             text);
     }
 
+    [Fact]
+    public void FormatForDisplay_XmlTextCDataAndAttributes_KeepTheirForm()
+    {
+        string text = Format(
+            "application/xml",
+            "<r xmlns:p=\"urn:a&amp;b\" k=\"a&#38;b\"><t>a&#x26;b</t><c><![CDATA[z<z]]></c><s>a&amp;<![CDATA[b<]]>c</s></r>");
+
+        Assert.Equal(
+            string.Join(
+                s_newLine,
+                "<r xmlns:p=\"urn:a&amp;b\" k=\"a&amp;b\">",
+                "  <t>a&amp;b</t>",
+                "  <c><![CDATA[z<z]]></c>",
+                "  <s>a&amp;<![CDATA[b<]]>c</s>",
+                "</r>"),
+            text);
+    }
+
     [Theory]
     [InlineData("<root><open></root>")]
     [InlineData("<!DOCTYPE root [<!ENTITY e \"x\">]><root>&e;</root>")]
@@ -175,7 +211,7 @@ public sealed class BodyFormatterTests
     {
         byte[] body = [0x63, 0x61, 0x66, 0xE9];
 
-        string text = BodyFormatter.FormatForDisplay("text/plain; charset=iso-8859-1", body, value => value);
+        string text = BodyFormatter.FormatForDisplay("text/plain; charset=iso-8859-1", body);
 
         Assert.Equal("caf\u00E9", text);
     }
@@ -185,7 +221,7 @@ public sealed class BodyFormatterTests
     {
         byte[] body = [.. Encoding.UTF8.GetPreamble(), .. "[1]"u8];
 
-        string text = BodyFormatter.FormatForDisplay("application/json", body, value => value);
+        string text = BodyFormatter.FormatForDisplay("application/json", body);
 
         Assert.Equal($"[{s_newLine}  1{s_newLine}]", text);
     }
@@ -221,113 +257,9 @@ public sealed class BodyFormatterTests
         Assert.Equal(body, text);
     }
 
-    [Fact]
-    public void FormatForDisplay_JsonStringsAndPropertyNames_AreMaskedAsDecoded()
-    {
-        string text = BodyFormatter.FormatForDisplay(
-            "application/json",
-            Encoding.UTF8.GetBytes($$"""{"a{{EscapedB}}c":["x-a{{EscapedB}}c-y",{"k":"abc"}],"n":1}"""),
-            value => value.Replace("abc", "#", StringComparison.Ordinal));
-
-        Assert.Equal(
-            string.Join(
-                s_newLine,
-                "{",
-                "  \"#\": [",
-                "    \"x-#-y\",",
-                "    {",
-                "      \"k\": \"#\"",
-                "    }",
-                "  ],",
-                "  \"n\": 1",
-                "}"),
-            text);
-    }
-
-    [Fact]
-    public void FormatForDisplay_JsonPropertyNamesThatMaskToTheSameText_AreBothWritten()
-    {
-        string text = BodyFormatter.FormatForDisplay(
-            "application/json",
-            Encoding.UTF8.GetBytes($$"""{"abc":1,"a{{EscapedB}}c":2}"""),
-            value => value.Replace("abc", "#", StringComparison.Ordinal));
-
-        Assert.Equal(string.Join(s_newLine, "{", "  \"#\": 1,", "  \"#\": 2", "}"), text);
-    }
-
-    [Fact]
-    public void FormatForDisplay_XmlTextCDataAndAttributes_AreMaskedAsDecoded()
-    {
-        string text = BodyFormatter.FormatForDisplay(
-            "application/xml",
-            "<r xmlns:p=\"urn:a&amp;b\" k=\"a&#38;b\"><t>a&#x26;b</t><c><![CDATA[zzz]]></c></r>"u8.ToArray(),
-            value => value.Replace("a&b", "#", StringComparison.Ordinal).Replace("zzz", "#", StringComparison.Ordinal));
-
-        Assert.Equal(
-            string.Join(
-                s_newLine,
-                "<r xmlns:p=\"urn:a&amp;b\" k=\"#\">",
-                "  <t>#</t>",
-                "  <c><![CDATA[#]]></c>",
-                "</r>"),
-            text);
-    }
-
-    [Fact]
-    public void FormatForDisplay_PlainText_IsMasked()
-    {
-        string text = BodyFormatter.FormatForDisplay(
-            "text/plain",
-            "key abc"u8.ToArray(),
-            value => value.Replace("abc", "#", StringComparison.Ordinal));
-
-        Assert.Equal("key #", text);
-    }
-
-    [Fact]
-    public void FormatForDisplay_MaskBreaksTheJson_ReturnsMaskedTextAsIs()
-    {
-        string text = BodyFormatter.FormatForDisplay(
-            "application/json",
-            """{"n": 12345}"""u8.ToArray(),
-            value => value.Replace("12345", "#", StringComparison.Ordinal));
-
-        Assert.Equal("""{"n": #}""", text);
-    }
-
-    [Fact]
-    public void FormatForDisplay_XmlNestedDeeperThanTheLimitWithSecret_ReturnsMaskedTextAsIs()
-    {
-        SecretMask mask = new();
-        mask.Add("pass&word<1234");
-        string body = NestedXml(depth: 65, content: "key pass&amp;word&lt;1234 end");
-
-        string text = BodyFormatter.FormatForDisplay("application/xml", Encoding.UTF8.GetBytes(body), mask.Apply);
-
-        Assert.Equal(NestedXml(depth: 65, content: "key *** end"), text);
-    }
-
-    [Fact]
-    public void FormatForDisplay_XmlWithManySplitTextRuns_MasksThemInLinearTime()
-    {
-        const int RunCount = 20000;
-        SecretMask mask = new();
-        mask.Add("pass&word<1234");
-        string body = "<r>"
-            + string.Concat(Enumerable.Repeat("pass&amp;<![CDATA[word<]]>1234<i />", RunCount))
-            + "</r>";
-        Stopwatch stopwatch = Stopwatch.StartNew();
-
-        string text = BodyFormatter.FormatForDisplay("application/xml", Encoding.UTF8.GetBytes(body), mask.Apply);
-
-        stopwatch.Stop();
-        Assert.Equal("<r>" + string.Concat(Enumerable.Repeat("***<i />", RunCount)) + "</r>", text);
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5), $"Took {stopwatch.Elapsed}.");
-    }
-
-    private static string NestedXml(int depth, string content = "") =>
-        string.Concat(Enumerable.Repeat("<a>", depth)) + content + string.Concat(Enumerable.Repeat("</a>", depth));
+    private static string NestedXml(int depth) =>
+        string.Concat(Enumerable.Repeat("<a>", depth)) + string.Concat(Enumerable.Repeat("</a>", depth));
 
     private static string Format(string contentType, string body) =>
-        BodyFormatter.FormatForDisplay(contentType, Encoding.UTF8.GetBytes(body), value => value);
+        BodyFormatter.FormatForDisplay(contentType, Encoding.UTF8.GetBytes(body));
 }

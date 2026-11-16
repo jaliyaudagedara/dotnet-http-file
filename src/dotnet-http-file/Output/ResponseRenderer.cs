@@ -10,9 +10,10 @@ using Spectre.Console.Rendering;
 namespace DotNetHttpFile.Output;
 
 /// <summary>
-/// Writes exchanges, warnings and errors to the console. Everything it displays goes through the secret mask
-/// and has its control characters made visible; only the response bytes of <see cref="OutputMode.Body"/> are
-/// written as received, with a warning when they hold a secret.
+/// Writes exchanges, warnings and errors to the console. What the tool says about the request it built, and its
+/// warnings and errors, go through the secret mask. The response is shown as the server sent it. Everything
+/// written as text has its control characters made visible; the response bytes of <see cref="OutputMode.Body"/>
+/// are written as received.
 /// </summary>
 internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secretMask, OutputMode mode)
 {
@@ -61,7 +62,7 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
             CultureInfo.InvariantCulture,
             $"\u2192 {request.Name}  {sent.Method} {sent.DisplayUrl}  {status}  {milliseconds} ms");
 
-        WriteLines(mode == OutputMode.Full ? console.Output : console.Error, line, s_dependencyStyle);
+        WriteMaskedLines(mode == OutputMode.Full ? console.Output : console.Error, line, s_dependencyStyle);
     }
 
     /// <summary>
@@ -84,10 +85,6 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         if (mode == OutputMode.Body)
         {
             WriteLines(console.Error, StatusLine(response), StatusStyle(response));
-            if (secretMask.Contains(response.Body.Span))
-            {
-                RenderWarning(Resources.BodyContainsSecret);
-            }
 
             await console.StandardOutput.WriteAsync(response.Body, cancellationToken).ConfigureAwait(false);
             await console.StandardOutput.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -102,8 +99,11 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         }
     }
 
-    /// <summary>Writes <paramref name="message"/> to standard error as a note on what the run is doing.</summary>
-    public void RenderNotice(string message)
+    /// <summary>
+    /// Writes <paramref name="message"/>, the note that a redirect is followed, to standard error. It is not masked:
+    /// it reports the location the server sent.
+    /// </summary>
+    public void RenderRedirect(string message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
@@ -115,7 +115,7 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        WriteLines(console.Error, Format(s_outputWarningFormat, message), s_warningStyle);
+        WriteMaskedLines(console.Error, Format(s_outputWarningFormat, message), s_warningStyle);
     }
 
     /// <summary>Writes <paramref name="message"/> to standard error as an error.</summary>
@@ -123,7 +123,7 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        WriteLines(console.Error, Format(s_outputErrorFormat, message), s_failureStyle);
+        WriteMaskedLines(console.Error, Format(s_outputErrorFormat, message), s_failureStyle);
     }
 
     /// <summary>
@@ -157,14 +157,14 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         return builder?.ToString() ?? text;
     }
 
-    private static string BodyDisplayText(ReceivedResponse response, Func<string, string> mask)
+    private static string BodyDisplayText(ReceivedResponse response)
     {
         string? contentType = response.ContentType;
 
         // A body still in a coding the tool does not decode is not what its content type says.
         if (!response.IsContentEncoded && BodyFormatter.IsText(contentType, response.Body.Span))
         {
-            return BodyFormatter.FormatForDisplay(contentType, response.Body, mask);
+            return BodyFormatter.FormatForDisplay(contentType, response.Body);
         }
 
         string size = FormatSize(response.Body.Length);
@@ -251,31 +251,10 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     private static string Format(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
         string.Format(CultureInfo.CurrentCulture, format, arguments);
 
-    private void RenderFull(HttpExchange exchange)
-    {
-        IAnsiConsole output = console.Output;
-        ResolvedRequest request = exchange.Request;
-        ReceivedResponse response = exchange.Response;
+    private static void WriteLines(IAnsiConsole target, string text, Style? style = null) =>
+        target.Write(new UnwrappedLines(WithVisibleControlCharacters(text), style));
 
-        WriteLines(output, $"{request.Method} {request.DisplayUrl}");
-        foreach (KeyValuePair<string, string> header in request.Headers)
-        {
-            WriteLines(output, $"{header.Key}: {RequestHeaderDisplayValue(header)}");
-        }
-
-        WriteLines(output, string.Empty);
-        WriteLines(output, StatusLine(response), StatusStyle(response));
-        WriteHeaders(output, response);
-        WriteLines(output, string.Empty);
-
-        string body = WithoutFinalLineBreak(BodyDisplayText(response, secretMask.Apply));
-        if (body.Length > 0)
-        {
-            WriteLines(output, body);
-        }
-    }
-
-    private void WriteHeaders(IAnsiConsole target, ReceivedResponse response)
+    private static void WriteHeaders(IAnsiConsole target, ReceivedResponse response)
     {
         foreach (KeyValuePair<string, string> header in response.Headers)
         {
@@ -283,11 +262,35 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         }
     }
 
+    private void RenderFull(HttpExchange exchange)
+    {
+        IAnsiConsole output = console.Output;
+        ResolvedRequest request = exchange.Request;
+        ReceivedResponse response = exchange.Response;
+
+        WriteMaskedLines(output, $"{request.Method} {request.DisplayUrl}");
+        foreach (KeyValuePair<string, string> header in request.Headers)
+        {
+            WriteMaskedLines(output, $"{header.Key}: {RequestHeaderDisplayValue(header)}");
+        }
+
+        WriteLines(output, string.Empty);
+        WriteLines(output, StatusLine(response), StatusStyle(response));
+        WriteHeaders(output, response);
+        WriteLines(output, string.Empty);
+
+        string body = WithoutFinalLineBreak(BodyDisplayText(response));
+        if (body.Length > 0)
+        {
+            WriteLines(output, body);
+        }
+    }
+
     // The text is masked as a whole and only then split into lines, so a secret that spans lines is hidden too.
     // Control characters are made visible after masking: a secret that holds one still matches as it was
     // registered, and text inserted after the match cannot become part of one.
-    private void WriteLines(IAnsiConsole target, string text, Style? style = null) =>
-        target.Write(new UnwrappedLines(WithVisibleControlCharacters(secretMask.Apply(text)), style));
+    private void WriteMaskedLines(IAnsiConsole target, string text, Style? style = null) =>
+        WriteLines(target, secretMask.Apply(text), style);
 
     /// <summary>
     /// Text written with the line breaks it has and no others. Spectre's <see cref="Text"/> wraps at the console

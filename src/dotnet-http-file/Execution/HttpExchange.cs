@@ -18,7 +18,8 @@ internal sealed record ResolvedRequest(
     string? Body)
 {
     /// <summary>
-    /// The URL as resolved from the file, with provider-resolved values already masked. The only URL to print.
+    /// The only URL to print. For a request from the file, the URL as resolved with provider-resolved values
+    /// masked. For a redirect, the location the server sent, masked only when it takes parts of the request URL.
     /// </summary>
     public required string DisplayUrl { get; init; }
 

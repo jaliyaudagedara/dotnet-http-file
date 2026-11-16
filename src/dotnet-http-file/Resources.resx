@@ -314,7 +314,7 @@
   </data>
   <data name="Redirected" xml:space="preserve">
     <value>Redirected to {0} ({1})</value>
-    <comment>{0} is the URL a redirect leads to, with provider-resolved values shown as ***. {1} is the status code of the redirect, such as 302. Written to standard error once for each redirect that is followed.</comment>
+    <comment>{0} is the URL a redirect leads to, as the server sent it; provider-resolved values are shown as *** when the URL takes parts of the request URL. {1} is the status code of the redirect, such as 302. Written to standard error once for each redirect that is followed.</comment>
   </data>
   <data name="SendTimedOut" xml:space="preserve">
     <value>{0} {1} timed out after {2} s.</value>
@@ -339,10 +339,6 @@
   <data name="BinaryBodySummaryNoContentType" xml:space="preserve">
     <value>(binary body, {0}; use --show body to write it)</value>
     <comment>{0} is the body size with its unit, such as 1.5 KB. Used when the response has no Content-Type. --show body is a literal option with its value and is not translated.</comment>
-  </data>
-  <data name="BodyContainsSecret" xml:space="preserve">
-    <value>the response body contains a secret value from this run; it is written unmasked.</value>
-    <comment>A warning, shown after "warning: " when the response body is written as received and holds a value that came from a secret provider.</comment>
   </data>
   <data name="OutputError" xml:space="preserve">
     <value>error: {0}</value>

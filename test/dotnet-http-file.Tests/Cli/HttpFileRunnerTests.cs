@@ -407,10 +407,11 @@ public sealed class HttpFileRunnerTests
         Assert.Equal(ExitCodes.Success, exitCode);
         RecordedRequest received = Assert.Single(server.Requests);
         Assert.Equal([$"Bearer {Token}"], received.HeaderValues(AuthorizationHeader));
-        Assert.Equal("Authorization: Bearer ***", harness.OutputLines[1]);
-        Assert.Equal("X-Api-Key: ***", harness.OutputLines[2]);
-        Assert.DoesNotContain(Token, harness.Output.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain(Token, harness.Error.Output, StringComparison.Ordinal);
+        Assert.Equal(
+            [$"GET {server.BaseUri}echo", "Authorization: Bearer ***", "X-Api-Key: ***", ""],
+            harness.OutputLines[..4]);
+        Assert.Contains($"\"{Token}\"", harness.OutputText, StringComparison.Ordinal);
+        Assert.Empty(harness.ErrorLines);
     }
 
     [Fact]
@@ -701,7 +702,7 @@ public sealed class HttpFileRunnerTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task RunAsync_BodyModeEchoesSecret_WritesBytesUnmaskedAndWarns(bool forced)
+    public async Task RunAsync_BodyModeEchoesSecret_WritesBytesAsReceived(bool forced)
     {
         await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
         using Harness harness = new() { IsOutputRedirected = !forced };
@@ -721,38 +722,12 @@ public sealed class HttpFileRunnerTests
         Assert.Equal(ExitCodes.Success, exitCode);
         string body = Encoding.UTF8.GetString(harness.StandardOutput.ToArray());
         Assert.Contains($"\"{Token}\"", body, StringComparison.Ordinal);
-        Assert.Equal(2, harness.ErrorLines.Length);
-        Assert.StartsWith("HTTP/1.1 200 OK", harness.ErrorLines[0], StringComparison.Ordinal);
-        Assert.Equal(
-            "warning: the response body contains a secret value from this run; it is written unmasked.",
-            harness.ErrorLines[1]);
+        Assert.StartsWith("HTTP/1.1 200 OK", Assert.Single(harness.ErrorLines), StringComparison.Ordinal);
         Assert.Empty(harness.OutputLines);
     }
 
     [Fact]
-    public async Task RunAsync_BodyModeWithSecretThatIsNotEchoed_DoesNotWarn()
-    {
-        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
-        using Harness harness = new() { IsOutputRedirected = true };
-        harness.Providers.Add(new FakeSecretProvider(AccessTokenProviderName, _ => Token));
-        await harness.WriteFileAsync(
-            EnvironmentFileLocator.FileName,
-            """{ "dev": { "token": { "provider": "EntraAccessToken" } } }""");
-        string path = await harness.WriteHttpFileAsync(
-            $$$"""
-            GET {{{server.BaseUri}}}json
-            X-Api-Key: {{token}}
-            """);
-
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, "dev", null, Insecure: false));
-
-        Assert.Equal(ExitCodes.Success, exitCode);
-        Assert.Equal(EchoServer.JsonBody, Encoding.UTF8.GetString(harness.StandardOutput.ToArray()));
-        Assert.StartsWith("HTTP/1.1 200 OK", Assert.Single(harness.ErrorLines), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RunAsync_HeadersMode_PrintsStatusLineAndMaskedResponseHeaders()
+    public async Task RunAsync_HeadersMode_PrintsStatusLineAndResponseHeadersAsReceived()
     {
         await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
         using Harness harness = new();
@@ -770,9 +745,8 @@ public sealed class HttpFileRunnerTests
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal("HTTP/1.1 200 OK", harness.OutputLines[0]);
-        Assert.Contains("Location: key=***", harness.OutputLines);
+        Assert.Contains($"Location: key={Token}", harness.OutputLines);
         Assert.All(harness.OutputLines[1..], line => Assert.Contains(": ", line, StringComparison.Ordinal));
-        Assert.DoesNotContain(Token, harness.Output.Output + harness.Error.Output, StringComparison.Ordinal);
         Assert.Empty(harness.ErrorLines);
         Assert.Equal(0, harness.StandardOutput.Length);
     }
@@ -980,7 +954,7 @@ public sealed class HttpFileRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_SecretInUrlEchoedInUriEscaping_MasksItInTheBody()
+    public async Task RunAsync_SecretInUrlEchoedByTheServer_MasksOnlyTheRequestLine()
     {
         const string UrlSecret = "p@ss w/rd+1";
         const string SentForm = "p@ss%20w/rd+1";
@@ -1001,14 +975,13 @@ public sealed class HttpFileRunnerTests
         Assert.Equal($"GET /echo/{SentForm}?key={SentForm} HTTP/1.1", Assert.Single(server.Requests).RequestLine);
         Assert.Equal($"GET {server.BaseUri}echo/***?key=***", harness.OutputLines[0]);
         Assert.Contains(
-            "\"request_line\": \"GET /echo/***?key=*** HTTP/1.1\"",
+            $"\"request_line\": \"GET /echo/{SentForm}?key={SentForm} HTTP/1.1\"",
             harness.OutputText,
             StringComparison.Ordinal);
-        Assert.DoesNotContain("p@ss", harness.Output.Output + harness.Error.Output, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task RunAsync_CrossOriginRedirect_DropsCredentialsAndPrintsTheMaskedRedirect()
+    public async Task RunAsync_CrossOriginRedirect_DropsCredentialsAndPrintsTheLocationAsReceived()
     {
         await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
         await using EchoServer otherOrigin = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
@@ -1037,11 +1010,10 @@ public sealed class HttpFileRunnerTests
         Assert.Empty(followed.HeaderValues("Cookie"));
         Assert.Empty(followed.HeaderValues("X-Api-Key"));
         Assert.Equal(["plain"], followed.HeaderValues("X-Plain"));
-        Assert.Equal([$"Redirected to {otherOrigin.BaseUri}echo?key=*** (302)"], harness.ErrorLines);
+        Assert.Equal([$"Redirected to {otherOrigin.BaseUri}echo?key={Token} (302)"], harness.ErrorLines);
         Assert.Equal(
             [$"GET {redirectUrl}***", "Authorization: Bearer ***", "Cookie: ***", "X-Api-Key: ***", "X-Plain: plain"],
             harness.OutputLines[..5]);
-        Assert.DoesNotContain(Token, harness.Output.Output + harness.Error.Output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1220,7 +1192,6 @@ public sealed class HttpFileRunnerTests
             ["""{"query":"{ login(password: \"pa\"ss\\word-123\") }"}"""],
             server.Requests[^1].HeaderValues("X-Sent"));
         Assert.Contains("""X-Sent: {"query":"{ login(password: \"***\") }"}""", harness.OutputLines);
-        Assert.DoesNotContain("word-123", harness.Output.Output + harness.Error.Output, StringComparison.Ordinal);
     }
 
     [Fact]

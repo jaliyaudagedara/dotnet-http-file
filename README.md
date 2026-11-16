@@ -21,8 +21,9 @@ dotnet http-file MyApi.http --name getToDos --show status
 dotnet http-file MyApi.http --name getToDos | jq '.[0].title'
 ```
 
-In a terminal it prints the request, status, headers and formatted body, with secrets masked. When piped, it
-writes the raw body to stdout. Without `--name`, a terminal gets a request picker.
+In a terminal it prints the request, with secrets masked, then the response status, headers and formatted body
+as the server sent them. When piped, it writes the raw body to stdout. Without `--name`, a terminal gets a
+request picker.
 
 Try `samples/Basics/Basics.http` (no setup) or `samples/Entra/Entra.http` (needs `az login`).
 
