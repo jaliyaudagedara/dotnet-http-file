@@ -311,6 +311,66 @@ public sealed class CommandLineTests
         Assert.Empty(harness.Runs);
     }
 
+    [Theory]
+    [InlineData("--key=secret", "--key")]
+    [InlineData("--key:secret", "--key")]
+    [InlineData("--vra=token=secret", "--vra")]
+    [InlineData("-x:secret=more", "-x")]
+    public async Task Main_UnknownOptionWithAttachedValue_ReportsOnlyTheOptionName(string token, string expected)
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(token, path);
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal([$"error: Unrecognized option '{expected}'."], harness.ErrorLines);
+        Assert.DoesNotContain("secret", harness.Error.Output, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("--key=secret", "--key")]
+    [InlineData("--key:secret", "--key")]
+    [InlineData("-x:secret=more", "-x")]
+    public async Task Main_UnknownOptionWithAttachedValueAfterTheFile_ReportsOnlyTheOptionName(
+        string token,
+        string expected)
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--name", "getToDos", token);
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal([$"error: Unrecognized option '{expected}'."], harness.ErrorLines);
+        Assert.DoesNotContain("secret", harness.Error.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Main_KnownOptionWithAttachedInvalidValue_KeepsTheParserMessage()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--name", "getToDos", "--show=bogus");
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal("error: Argument 'bogus' not recognized. Must be one of:", harness.ErrorLines[0]);
+        Assert.DoesNotContain("Unrecognized option", harness.Error.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Main_StrayArgumentAfterTheFile_IsEchoedAsTyped()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "b=S3CRET:x");
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(["error: Unrecognized command or argument 'b=S3CRET:x'."], harness.ErrorLines);
+    }
+
     [Fact]
     public async Task Main_UnknownOptionAlone_ReportsTheOption()
     {

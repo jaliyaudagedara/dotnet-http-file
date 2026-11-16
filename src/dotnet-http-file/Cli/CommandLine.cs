@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.CommandLine.Parsing;
@@ -35,6 +36,9 @@ internal static class CommandLine
     private static readonly string[] s_fileExtensions = [".http", ".rest"];
 
     private static readonly string[] s_showValues = [ShowFull, ShowBody, ShowHeaders, ShowStatus];
+
+    // The parser accepts --option=value and --option:value, and the value may be a secret.
+    private static readonly SearchValues<char> s_optionValueSeparators = SearchValues.Create("=:");
 
     private static readonly CompositeFormat s_fileExtensionNotSupportedFormat =
         CompositeFormat.Parse(Resources.FileExtensionNotSupported);
@@ -154,7 +158,7 @@ internal static class CommandLine
 
             foreach (ParseError error in parseResult.Errors)
             {
-                renderer.RenderError(error.Message);
+                renderer.RenderError(ErrorMessage(error, parseResult.UnmatchedTokens));
             }
 
             return Task.FromResult(ExitCodes.NotSent);
@@ -174,7 +178,8 @@ internal static class CommandLine
     }
 
     /// <summary>
-    /// Returns the token that stands where the file is expected when it is an option and not a file.
+    /// Returns the name of the option that stands where the file is expected, without any value attached to it,
+    /// or null when that token is a file or not an option.
     /// </summary>
     private static string? FindUnknownOption(ArgumentResult? fileResult)
     {
@@ -185,7 +190,31 @@ internal static class CommandLine
 
         string token = fileResult.Tokens[0].Value;
 
-        return token.StartsWith(OptionPrefix) && !File.Exists(token) ? token : null;
+        return token.StartsWith(OptionPrefix) && !File.Exists(token) ? OptionName(token) : null;
+    }
+
+    /// <summary>
+    /// Returns the parser's message for <paramref name="error"/>, or, when it quotes an unknown option with a value
+    /// attached, the unrecognized option message naming only the option.
+    /// </summary>
+    private static string ErrorMessage(ParseError error, IReadOnlyList<string> unmatchedTokens)
+    {
+        // The parser reports an unmatched token against the command and quotes it whole. ParseError carries only
+        // the message and the symbol result, not the token, so the token is matched by its quoted form.
+        if (error.SymbolResult is CommandResult)
+        {
+            foreach (string token in unmatchedTokens)
+            {
+                if (token.StartsWith(OptionPrefix)
+                    && OptionName(token).Length < token.Length
+                    && error.Message.Contains($"'{token}'", StringComparison.Ordinal))
+                {
+                    return Messages.Format(s_unrecognizedOptionFormat, OptionName(token));
+                }
+            }
+        }
+
+        return error.Message;
     }
 
     private static OutputMode? ShowMode(string? value)
@@ -267,5 +296,12 @@ internal static class CommandLine
         {
             result.AddError(Messages.Format(s_fileExtensionNotSupportedFormat, path));
         }
+    }
+
+    private static string OptionName(string token)
+    {
+        int separator = token.AsSpan().IndexOfAny(s_optionValueSeparators);
+
+        return separator < 0 ? token : token[..separator];
     }
 }
