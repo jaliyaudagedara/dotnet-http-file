@@ -11,6 +11,12 @@
 
 Status lines, warnings and errors go to stderr when stdout carries the body.
 
+In a terminal, the status line is coloured, header names are teal and the request line of `full` is bold. The
+body is plain. Colour is off when output is redirected or `NO_COLOR` is set.
+
+A request that the selected request refers to prints a one-line summary (`→ name  GET url  200 OK  12 ms`).
+With `-v` that line is left out, because the `-v` log already has a line for each exchange.
+
 `-v` logs to stderr: files read, the environment, the request plan, each exchange, and for Entra tokens the scope,
 tenant, expiry and credential. It never logs a token or a secret-provider value (shown as `***`), and
 combines with `--show`.

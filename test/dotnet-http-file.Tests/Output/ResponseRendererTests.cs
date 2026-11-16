@@ -330,7 +330,7 @@ public sealed class ResponseRendererTests
 
         string[] lines = writer.ToString().Split(Environment.NewLine);
         Assert.True(spectreConsole.Profile.Width < longLine.Length);
-        Assert.Contains("X-Long: " + longLine, lines);
+        Assert.Contains($"{Escape}[36mX-Long{Escape}[0m: " + longLine, lines);
         Assert.Contains(longLine, lines);
     }
 
@@ -634,6 +634,182 @@ public sealed class ResponseRendererTests
     }
 
     [Fact]
+    public async Task RenderFull_ColourEnabled_StylesHeaderNamesAndBoldsTheRequestLine()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        HttpExchange exchange = new(
+            Request(headers: [new("Accept", "application/json")]),
+            Response(JsonContentType, "[1]"u8.ToArray()));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        string[] lines = harness.OutputLines;
+        Assert.Equal($"{Escape}[1mGET https://localhost:7128/v1/todos{Escape}[0m", lines[0]);
+        Assert.Equal($"{Escape}[36mAccept{Escape}[0m: application/json", lines[1]);
+        Assert.Equal($"{Escape}[36mContent-Type{Escape}[0m: application/json; charset=utf-8", lines[4]);
+        Assert.Equal("[", lines[6]);
+    }
+
+    [Fact]
+    public async Task RenderFull_ColourEnabledAndSecretInHeaderValue_MasksTheRequestOnly()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        harness.SecretMask.Add(Secret);
+        HttpExchange exchange = new(
+            Request(headers: [new("X-Api-Key", Secret)]),
+            new ReceivedResponse(
+                new Version(1, 1),
+                200,
+                "OK",
+                [new("X-Echo", $"a {Secret} b")],
+                Array.Empty<byte>(),
+                TimeSpan.FromMilliseconds(5)));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Contains($"{Escape}[36mX-Api-Key{Escape}[0m: ***", harness.OutputLines);
+        Assert.Contains($"{Escape}[36mX-Echo{Escape}[0m: a {Secret} b", harness.OutputLines);
+    }
+
+    [Fact]
+    public async Task RenderFull_ColourEnabledAndSecretSpansRequestHeaderNameAndValue_IsMaskedAndOnlyStylingMoves()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        harness.SecretMask.Add("Key: abc");
+        HttpExchange exchange = new(Request(headers: [new("X-Key", "abc")]), Response(null, []));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("abc", harness.Output.Output, StringComparison.Ordinal);
+        Assert.Contains("X-***", harness.OutputLines);
+    }
+
+    [Fact]
+    public async Task RenderFull_ColourEnabledAndSeparatorAfterMaskedSecretInValue_StylesOnlyTheName()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        harness.SecretMask.Add(Secret);
+        HttpExchange exchange = new(Request(headers: [new("X-Key", $"{Secret}: tail")]), Response(null, []));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Contains($"{Escape}[36mX-Key{Escape}[0m: ***: tail", harness.OutputLines);
+        Assert.DoesNotContain(Secret, harness.Output.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RenderFull_ColourEnabledAndSecretIsWholeRequestHeaderName_StylesTheMaskedName()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        harness.SecretMask.Add("X-Key");
+        HttpExchange exchange = new(Request(headers: [new("X-Key", "value")]), Response(null, []));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Contains($"{Escape}[36m***{Escape}[0m: value", harness.OutputLines);
+    }
+
+    [Fact]
+    public async Task RenderFull_ColourEnabledAndControlCharacterInHeaderName_ShowsItAsText()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        HttpExchange exchange = new(
+            Request(),
+            new ReceivedResponse(
+                new Version(1, 1),
+                200,
+                "OK",
+                [new($"X-A{Escape}[2Jb", "v")],
+                Array.Empty<byte>(),
+                TimeSpan.FromMilliseconds(5)));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Contains($"{Escape}[36mX-A\\x1B[2Jb{Escape}[0m: v", harness.OutputLines);
+        Assert.DoesNotContain($"{Escape}[2J", harness.Output.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RenderFull_ColourEnabledAndNewlineInHeaderValue_StylesOnlyTheName()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        HttpExchange exchange = new(
+            Request(),
+            new ReceivedResponse(
+                new Version(1, 1),
+                200,
+                "OK",
+                [new("X-Multi", "one\ntwo: three")],
+                Array.Empty<byte>(),
+                TimeSpan.FromMilliseconds(5)));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Contains($"{Escape}[36mX-Multi{Escape}[0m: one", harness.OutputLines);
+        Assert.Contains("two: three", harness.OutputLines);
+    }
+
+    [Fact]
+    public async Task RenderFull_NoColoursButAnsiEnabled_WritesNoEscapeSequences()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        harness.Output.Profile.Capabilities.ColorSystem = ColorSystem.NoColors;
+        HttpExchange exchange = new(
+            Request(headers: [new("Accept", "application/json")]),
+            Response(JsonContentType, []));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(Escape, harness.Output.Output);
+    }
+
+    [Fact]
+    public async Task RenderFull_ColourDisabled_WritesNoEscapeSequences()
+    {
+        using Harness harness = new(OutputMode.Full);
+        HttpExchange exchange = new(
+            Request(headers: [new("Accept", "application/json")]),
+            Response(JsonContentType, []));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(Escape, harness.Output.Output);
+    }
+
+    [Fact]
+    public async Task RenderHeaders_ColourEnabled_StylesHeaderNames()
+    {
+        using Harness harness = new(OutputMode.Headers, ansi: true);
+        HttpExchange exchange = new(Request(), Response(JsonContentType, []));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Contains(
+            $"{Escape}[36mContent-Type{Escape}[0m: application/json; charset=utf-8",
+            harness.OutputLines);
+    }
+
+    [Fact]
+    public async Task RenderFull_BidiOverrideInHeaderAndBody_ShowsItsCode()
+    {
+        using Harness harness = new(OutputMode.Full);
+        HttpExchange exchange = new(
+            Request(),
+            new ReceivedResponse(
+                new Version(1, 1),
+                200,
+                "OK",
+                [new("X-File", "user\u202Etxt.exe")],
+                Encoding.UTF8.GetBytes("name\u2066x"),
+                TimeSpan.FromMilliseconds(5)));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Contains(@"X-File: user\u202Etxt.exe", harness.OutputLines);
+        Assert.Contains(@"name\u2066x", harness.OutputLines);
+    }
+
+    [Fact]
     public async Task RenderFull_EscapeSequenceInBodyAndHeaders_PrintsItAsText()
     {
         string clearScreen = $"{Escape}[2J";
@@ -841,8 +1017,14 @@ public sealed class ResponseRendererTests
 
     private sealed class Harness : IDisposable
     {
-        public Harness(OutputMode mode, int width = 80)
+        public Harness(OutputMode mode, int width = 80, bool ansi = false)
         {
+            if (ansi)
+            {
+                Output.EmitAnsiSequences();
+                Output.Profile.Capabilities.ColorSystem = ColorSystem.Standard;
+            }
+
             Output.Profile.Width = width;
             Error.Profile.Width = width;
             Renderer = new ResponseRenderer(

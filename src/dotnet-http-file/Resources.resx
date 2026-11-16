@@ -125,8 +125,8 @@
     <comment>{0} is the variable name. {1} is the provider name. {2} is the name of the required JSON property that is absent, empty or not a string.</comment>
   </data>
   <data name="SecretFieldInvalid" xml:space="preserve">
-    <value>Variable '{0}' ({1}) has an invalid '{2}'. Expected a non-empty string.</value>
-    <comment>{0} is the variable name. {1} is the provider name. {2} is the name of the optional JSON property that is present but empty or not a string. A string in the wrong shape has its own message. The value is left out.</comment>
+    <value>Variable '{0}' ({1}) has an invalid '{2}'. Expected a string that is not blank.</value>
+    <comment>{0} is the variable name. {1} is the provider name. {2} is the name of the optional JSON property that is present but blank or not a string. A string in the wrong shape has its own message. The value is left out.</comment>
   </data>
   <data name="EntraAccessTokenInvalidScope" xml:space="preserve">
     <value>Variable '{0}' (EntraAccessToken) has an invalid 'scope'. Expected a single scope made of letters, digits and . - : _ / (for example api://my-api/.default).</value>
@@ -137,7 +137,7 @@
     <comment>{0} is the variable name. tenantId is a literal JSON property name and is not translated. The value is left out because it would be printed to the terminal as written.</comment>
   </data>
   <data name="EntraAccessTokenFailed" xml:space="preserve">
-    <value>{0} (EntraAccessToken): could not get an access token.{5}  scope:  {1}{5}  tenant: {2}{5}  tried:  {3}{5}  fix:    {4}</value>
+    <value>Variable '{0}' (EntraAccessToken): could not get an access token.{5}  scope:  {1}{5}  tenant: {2}{5}  tried:  {3}{5}  fix:    {4}</value>
     <comment>{0} is the variable name. {1} is the scope. {2} is the tenant ID, or the EntraAccessTokenDefaultTenant text. {3} is the message of the credential failure. {4} is the command that fixes it. {5} is the line break. The labels are padded so the values line up; keep the two leading spaces and the alignment.</comment>
   </data>
   <data name="EntraAccessTokenDefaultTenant" xml:space="preserve">
@@ -165,7 +165,7 @@
     <comment>{0} is the variable name. {1} is the vault name. {2} is the secret name. Used when the request got no HTTP response. resourceId is a literal JSON property name and is not translated.</comment>
   </data>
   <data name="KeyVaultSignInFailed" xml:space="preserve">
-    <value>{0} (AzureKeyVault): could not sign in to read secret '{2}' from vault '{1}'.{4}  tried:  {3}{4}  fix:    az login</value>
+    <value>Variable '{0}' (AzureKeyVault): could not sign in to read secret '{2}' from vault '{1}'.{4}  tried:  {3}{4}  fix:    az login</value>
     <comment>{0} is the variable name. {1} is the vault name. {2} is the secret name. {3} is the message of the credential failure. {4} is the line break. az login is a command and is not translated. The layout matches EntraAccessTokenFailed, without the scope and tenant lines because the provider takes neither; keep the two leading spaces and the alignment.</comment>
   </data>
   <data name="UserSecretsNoProject" xml:space="preserve">
@@ -433,8 +433,8 @@
     <comment>The --help description of --show. full, headers, status and body are literal option values and are not translated.</comment>
   </data>
   <data name="InsecureOptionDescription" xml:space="preserve">
-    <value>Skip server certificate validation.</value>
-    <comment>The --help description of --insecure.</comment>
+    <value>Skips server certificate validation.</value>
+    <comment>The --help description of --insecure. In the third person, like the other option descriptions that start with a verb.</comment>
   </data>
   <data name="VarOptionDescription" xml:space="preserve">
     <value>Sets a variable for this run, over the file and the environment. Can be repeated.</value>
@@ -497,11 +497,11 @@
     <comment>{0} is the name of the request that was sent first. {1} is its status code and reason phrase, such as 404 Not Found. {2} is the name of the selected request, else its ### title, else its method and URL as written in the file. ### is literal and is not translated.</comment>
   </data>
   <data name="Cancelled" xml:space="preserve">
-    <value>cancelled</value>
+    <value>Cancelled.</value>
     <comment>Shown after 'error: ' when the run is stopped with Ctrl+C.</comment>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
-    <value>unexpected {0}: {1}</value>
+    <value>Unexpected {0}: {1}</value>
     <comment>Shown after 'error: ' for a failure the tool did not foresee. {0} is the .NET exception type name. {1} is the exception message, or for an AggregateException the comma-separated type names of the exceptions it holds.</comment>
   </data>
   <data name="WrongTenantHint" xml:space="preserve">

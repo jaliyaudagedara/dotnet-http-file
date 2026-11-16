@@ -593,6 +593,16 @@ public sealed class CommandLineTests
     }
 
     [Fact]
+    public async Task Main_Help_DescribesInsecureAsWhatTheOptionDoes()
+    {
+        using Harness harness = new();
+
+        await harness.InvokeAsync("--help");
+
+        Assert.Contains("Skips server certificate validation.", harness.Output.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Main_Version_PrintsVersionAndReturnsSuccess()
     {
         using Harness harness = new();

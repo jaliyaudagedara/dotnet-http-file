@@ -387,7 +387,7 @@ public sealed class HttpFileRunnerTests
 
         Assert.True(harness.Picker.SawCancellation);
         Assert.Equal(ExitCodes.Cancelled, exitCode);
-        Assert.Equal(["error: cancelled"], harness.ErrorLines);
+        Assert.Equal(["error: Cancelled."], harness.ErrorLines);
         Assert.Equal(0, harness.HandlersCreated);
     }
 
@@ -682,7 +682,7 @@ public sealed class HttpFileRunnerTests
         int exitCode = await run;
 
         Assert.Equal(ExitCodes.Cancelled, exitCode);
-        Assert.Equal(["error: cancelled"], harness.ErrorLines);
+        Assert.Equal(["error: Cancelled."], harness.ErrorLines);
         Assert.Empty(harness.OutputLines);
     }
 
@@ -714,7 +714,7 @@ public sealed class HttpFileRunnerTests
         int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
-        Assert.Equal(["error: unexpected InvalidOperationException: Something broke."], harness.ErrorLines);
+        Assert.Equal(["error: Unexpected InvalidOperationException: Something broke."], harness.ErrorLines);
     }
 
     [Fact]
@@ -817,14 +817,14 @@ public sealed class HttpFileRunnerTests
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(
-            ["error: unexpected AggregateException: InvalidOperationException, TimeoutException"],
+            ["error: Unexpected AggregateException: InvalidOperationException, TimeoutException"],
             harness.ErrorLines);
         Assert.DoesNotContain(InnerMarker, harness.Error.Output + harness.Output.Output, StringComparison.Ordinal);
     }
 
     [Theory]
     [InlineData(true, "error: Vault said ***.")]
-    [InlineData(false, "error: unexpected InvalidOperationException: Vault said ***.")]
+    [InlineData(false, "error: Unexpected InvalidOperationException: Vault said ***.")]
     public async Task RunAsync_ErrorMessageHoldsResolvedSecret_MasksIt(bool isExpectedFailure, string expected)
     {
         using Harness harness = new();
@@ -877,7 +877,7 @@ public sealed class HttpFileRunnerTests
         int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
 
         Assert.Equal(ExitCodes.Cancelled, exitCode);
-        Assert.Equal(["error: cancelled"], harness.ErrorLines);
+        Assert.Equal(["error: Cancelled."], harness.ErrorLines);
     }
 
     [Fact]
@@ -1324,7 +1324,7 @@ public sealed class HttpFileRunnerTests
         int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
-        Assert.Equal(["error: unexpected IOException: The connection was reset."], harness.ErrorLines);
+        Assert.Equal(["error: Unexpected IOException: The connection was reset."], harness.ErrorLines);
     }
 
     [Fact]
@@ -1534,6 +1534,33 @@ public sealed class HttpFileRunnerTests
             harness.ErrorLines[4..],
             line => Assert.Matches(@"^verbose: GET http://localhost/todos -> 200 OK in \d+ ms$", line),
             line => Assert.Matches(@"^verbose: GET http://localhost/todos/7 -> 200 OK in \d+ ms$", line));
+    }
+
+    [Fact]
+    public async Task RunAsync_VerboseWithDependency_DoesNotPrintTheDependencySummary()
+    {
+        using Harness harness = new();
+        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(JsonResponse("""{"id": 7}""")));
+        string path = await harness.WriteHttpFileAsync(
+            """
+            # @name getToDos
+            GET http://localhost/todos
+
+            ###
+
+            # @name getToDo
+            GET http://localhost/todos/{{getToDos.response.body.$.id}}
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "getToDo", Verbose = true });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.DoesNotContain("\u2192", harness.Output.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("\u2192", harness.Error.Output, StringComparison.Ordinal);
+        Assert.Contains(
+            "verbose: GET http://localhost/todos -> 200 OK",
+            harness.Error.Output,
+            StringComparison.Ordinal);
     }
 
     [Fact]

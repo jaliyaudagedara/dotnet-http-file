@@ -56,7 +56,7 @@ public sealed class EntraAccessTokenProviderTests
 
         string expected = string.Join(
             Environment.NewLine,
-            "ApiToken (EntraAccessToken): could not get an access token.",
+            "Variable 'ApiToken' (EntraAccessToken): could not get an access token.",
             "  scope:  api://myapi/.default",
             "  tenant: 11111111-2222-3333-4444-555555555555",
             "  tried:  DefaultAzureCredential failed to retrieve a token.",
@@ -74,7 +74,7 @@ public sealed class EntraAccessTokenProviderTests
 
         string expected = string.Join(
             Environment.NewLine,
-            "ApiToken (EntraAccessToken): could not get an access token.",
+            "Variable 'ApiToken' (EntraAccessToken): could not get an access token.",
             "  scope:  api://myapi/.default",
             "  tenant: default",
             "  tried:  DefaultAzureCredential failed to retrieve a token.",
@@ -125,6 +125,7 @@ public sealed class EntraAccessTokenProviderTests
     [Theory]
     [InlineData("""{ "provider": "EntraAccessToken", "scope": "api://myapi/.default", "tenantId": 5 }""")]
     [InlineData("""{ "provider": "EntraAccessToken", "scope": "api://myapi/.default", "tenantId": "" }""")]
+    [InlineData("""{ "provider": "EntraAccessToken", "scope": "api://myapi/.default", "tenantId": "  " }""")]
     public async Task ResolveAsync_EntraAccessTokenTenantNotAString_Throws(string definitionJson)
     {
         FakeTokenCredential credential = new();
@@ -133,7 +134,7 @@ public sealed class EntraAccessTokenProviderTests
             () => ResolveAsync(credential, definitionJson));
 
         Assert.Equal(
-            "Variable 'ApiToken' (EntraAccessToken) has an invalid 'tenantId'. Expected a non-empty string.",
+            "Variable 'ApiToken' (EntraAccessToken) has an invalid 'tenantId'. Expected a string that is not blank.",
             exception.Message);
     }
 

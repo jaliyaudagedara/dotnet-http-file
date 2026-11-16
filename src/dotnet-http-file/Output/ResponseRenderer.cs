@@ -42,6 +42,8 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     private static readonly Style s_failureStyle = new(foreground: Color.Red);
     private static readonly Style s_warningStyle = new(foreground: Color.Yellow);
     private static readonly Style s_dependencyStyle = new(foreground: Color.Grey);
+    private static readonly Style s_headerNameStyle = new(foreground: Color.Teal);
+    private static readonly Style s_requestLineStyle = new(decoration: Decoration.Bold);
 
     /// <summary>
     /// Writes the one-line summary of a request that was sent because the selected request refers to it.
@@ -239,11 +241,13 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
             : string.Create(CultureInfo.InvariantCulture, $"{(double)byteCount / BytesPerMegabyte:F1} MB");
     }
 
+    private static string HeaderLine(string name, string value) => $"{name}{ConsoleText.HeaderSeparator}{value}";
+
     private static void WriteHeaders(IAnsiConsole target, ReceivedResponse response)
     {
         foreach (KeyValuePair<string, string> header in response.Headers)
         {
-            ConsoleText.WriteLines(target, $"{header.Key}: {header.Value}");
+            ConsoleText.WriteHeader(target, HeaderLine(header.Key, header.Value), s_headerNameStyle);
         }
     }
 
@@ -253,10 +257,15 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         ResolvedRequest request = exchange.Request;
         ReceivedResponse response = exchange.Response;
 
-        WriteMaskedLines(output, $"{request.Method} {request.DisplayUrl}");
+        WriteMaskedLines(output, $"{request.Method} {request.DisplayUrl}", s_requestLineStyle);
         foreach (KeyValuePair<string, string> header in request.Headers)
         {
-            WriteMaskedLines(output, $"{header.Key}: {RequestHeaderDisplayValue(header)}");
+            // The line is masked as a whole before the name is styled, so a secret that spans the name and the
+            // value is hidden, and the styling can never split one.
+            ConsoleText.WriteHeader(
+                output,
+                secretMask.Apply(HeaderLine(header.Key, RequestHeaderDisplayValue(header))),
+                s_headerNameStyle);
         }
 
         ConsoleText.WriteLines(output, string.Empty);

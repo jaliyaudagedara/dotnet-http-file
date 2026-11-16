@@ -30,7 +30,7 @@ public sealed class AzureKeyVaultProviderTests
 
     private static readonly string s_signInFailedMessage = string.Join(
         Environment.NewLine,
-        "AKVSecret (AzureKeyVault): could not sign in to read secret 'SecretInKeyVault' from vault "
+        "Variable 'AKVSecret' (AzureKeyVault): could not sign in to read secret 'SecretInKeyVault' from vault "
             + "'my-key-vault-01182024'.",
         "  tried:  service response text",
         "  fix:    az login");

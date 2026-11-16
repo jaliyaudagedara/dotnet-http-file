@@ -224,7 +224,12 @@ internal sealed class HttpFileRunner(
         {
             HttpExchange exchange = await SendAsync(dependency).ConfigureAwait(false);
 
-            renderer.RenderDependency(dependency, exchange);
+            // The -v log already has a line for the exchange.
+            if (!options.Verbose)
+            {
+                renderer.RenderDependency(dependency, exchange);
+            }
+
             RenderWrongTenantHint(renderer, exchange);
             if (!exchange.Response.IsSuccess)
             {
