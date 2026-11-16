@@ -758,7 +758,7 @@ public sealed class HttpFileRunnerTests
         string path = await harness.WriteHttpFileAsync(
             $"""
             GET {server.BaseUri}echo
-            Content-Type: application/json
+            Content-Length: 0
             """);
 
         int exitCode = await harness.RunAsync(new RunOptions(path));
@@ -766,7 +766,7 @@ public sealed class HttpFileRunnerTests
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(
             [
-                "warning: Header 'Content-Type' ignored: a request without a body cannot have content headers "
+                "warning: Header 'Content-Length' ignored: a request without a body cannot have content headers "
                     + "(line 2).",
             ],
             harness.ErrorLines);

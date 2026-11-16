@@ -35,7 +35,7 @@ public sealed class RequestSenderTests
             new Uri(server.BaseUri, "/echo?case=2"),
             body: "line1\r\nline2");
 
-        await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        await sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken);
 
         RecordedRequest recorded = Assert.Single(server.Requests);
         Assert.Equal("POST /echo?case=2 HTTP/1.1", recorded.RequestLine);
@@ -56,7 +56,7 @@ public sealed class RequestSenderTests
             body: "obj={}",
             headers: [(ContentTypeHeader, "text/plain", 6)]);
 
-        await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        await sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken);
 
         RecordedRequest recorded = Assert.Single(server.Requests);
         Assert.Equal(["text/plain"], recorded.HeaderValues(ContentTypeHeader));
@@ -71,7 +71,7 @@ public sealed class RequestSenderTests
         RequestSender sender = CreateSender(httpClient);
         ResolvedRequest request = ResolvedRequestFactory.Create("PUT", new Uri(server.BaseUri, "/echo"), body: Body);
 
-        await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        await sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken);
 
         RecordedRequest recorded = Assert.Single(server.Requests);
         Assert.Equal(Encoding.UTF8.GetBytes(Body), recorded.Body.ToArray());
@@ -93,7 +93,7 @@ public sealed class RequestSenderTests
         using Activity activity = new(nameof(SendAsync_NoAddedHeaders_OnlyHostAndWrittenOnes));
         activity.Start();
 
-        await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        await sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken);
 
         RecordedRequest recorded = Assert.Single(server.Requests);
         Assert.Equal(
@@ -111,7 +111,7 @@ public sealed class RequestSenderTests
         RequestSender sender = CreateSender(httpClient);
         ResolvedRequest request = ResolvedRequestFactory.Create("GET", new Uri(server.BaseUri, "/json"));
 
-        await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        await sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken);
 
         RecordedRequest recorded = Assert.Single(server.Requests);
         Assert.Equal([HostHeader], recorded.Headers.Select(header => header.Key));
@@ -129,7 +129,7 @@ public sealed class RequestSenderTests
             new Uri(server.BaseUri, "/echo"),
             headers: [(HostHeader, "api.example.test", 2)]);
 
-        await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        await sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken);
 
         RecordedRequest recorded = Assert.Single(server.Requests);
         Assert.Equal(["api.example.test"], recorded.HeaderValues(HostHeader));
@@ -143,7 +143,10 @@ public sealed class RequestSenderTests
         RequestSender sender = CreateSender(httpClient);
         ResolvedRequest request = ResolvedRequestFactory.Create("GET", new Uri(server.BaseUri, "/redirect?case=8"));
 
-        ReceivedResponse response = await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        ReceivedResponse response = await sender.SendAsync(
+            request,
+            [],
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(200, response.StatusCode);
         Assert.Equal(
@@ -160,19 +163,36 @@ public sealed class RequestSenderTests
         ResolvedRequest request = ResolvedRequestFactory.Create(
             "GET",
             new Uri(server.BaseUri, "/echo"),
-            headers: [("X-Keep", "kept", 6), (ContentTypeHeader, "application/json", 7)]);
+            headers: [("X-Keep", "kept", 6), (ContentLengthHeader, "0", 7)]);
         List<string> warnings = [];
 
-        await sender.SendAsync(request, warnings, TestContext.Current.CancellationToken);
+        await sender.SendAsync(request, warnings, cancellationToken: TestContext.Current.CancellationToken);
 
         string warning = Assert.Single(warnings);
         Assert.Equal(
-            "Header 'Content-Type' ignored: a request without a body cannot have content headers (line 7).",
+            "Header 'Content-Length' ignored: a request without a body cannot have content headers (line 7).",
             warning);
         RecordedRequest recorded = Assert.Single(server.Requests);
         Assert.Equal(
             [HostHeader, "X-Keep"],
             recorded.Headers.Select(header => header.Key).Order(StringComparer.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task SendAsync_RedirectChain_PassesTheLogForTheFirstSendOnly()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using HttpClient httpClient = CreateClient();
+        RequestSender sender = CreateSender(httpClient);
+        ResolvedRequest request = ResolvedRequestFactory.Create(
+            "GET",
+            server.RedirectUrl(302, "/echo"),
+            headers: [(ContentTypeHeader, "application/json", 5)]);
+        List<string> log = [];
+
+        await sender.SendAsync(request, [], log.Add, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["Content-Type on line 5 not sent: the request has no body."], log);
     }
 
     [Fact]
@@ -190,7 +210,7 @@ public sealed class RequestSenderTests
         };
 
         HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
-            () => sender.SendAsync(request, [], TestContext.Current.CancellationToken));
+            () => sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.StartsWith($"Could not send GET http://127.0.0.1:{port}/echo?key=***: ", exception.Message);
         Assert.DoesNotContain(Secret, exception.Message);
@@ -205,7 +225,10 @@ public sealed class RequestSenderTests
         RequestSender sender = CreateSender(httpClient);
         ResolvedRequest request = ResolvedRequestFactory.Create("GET", new Uri(server.BaseUri, "/json"));
 
-        ReceivedResponse response = await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        ReceivedResponse response = await sender.SendAsync(
+            request,
+            [],
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpVersion.Version11, response.HttpVersion);
         Assert.Equal(200, response.StatusCode);
@@ -235,7 +258,7 @@ public sealed class RequestSenderTests
         Task<ReceivedResponse> send = sender.SendAsync(
             ResolvedRequestFactory.Create("GET", url),
             [],
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
         await Task.WhenAll(send, serve);
         ReceivedResponse response = await send;
 
@@ -268,7 +291,7 @@ public sealed class RequestSenderTests
         Task<ReceivedResponse> send = sender.SendAsync(
             ResolvedRequestFactory.Create("GET", url),
             [],
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
         await Task.WhenAll(send, serve);
         ReceivedResponse response = await send;
 
@@ -286,7 +309,7 @@ public sealed class RequestSenderTests
         ReceivedResponse response = await sender.SendAsync(
             ResolvedRequestFactory.Create("GET", s_stubUrl),
             [],
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(string.Empty, response.ReasonPhrase);
         Assert.Equal(299, response.StatusCode);
@@ -304,7 +327,7 @@ public sealed class RequestSenderTests
         ResolvedRequest request = ResolvedRequestFactory.Create("GET", new Uri("https://stub.test/echo"));
 
         HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
-            () => sender.SendAsync(request, [], TestContext.Current.CancellationToken));
+            () => sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(
             "Could not send GET https://stub.test/echo: The remote certificate is invalid. "
@@ -322,11 +345,11 @@ public sealed class RequestSenderTests
         await sender.SendAsync(
             ResolvedRequestFactory.Create("GET", new Uri(server.BaseUri, EchoServer.RedirectWithCookiePath)),
             [],
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
         await sender.SendAsync(
             ResolvedRequestFactory.Create("GET", new Uri(server.BaseUri, "/echo?later=1")),
             [],
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(
             [EchoServer.RedirectWithCookiePath, EchoServer.RedirectLocation, "/echo?later=1"],
@@ -345,7 +368,7 @@ public sealed class RequestSenderTests
             new Uri(server.BaseUri, "/echo"),
             headers: [(CookieHeader, "session=written", 2)]);
 
-        await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        await sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken);
 
         RecordedRequest recorded = Assert.Single(server.Requests);
         Assert.Equal(["session=written"], recorded.HeaderValues(CookieHeader));
@@ -370,7 +393,7 @@ public sealed class RequestSenderTests
             ]);
 
         HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
-            () => sender.SendAsync(request, [], TestContext.Current.CancellationToken));
+            () => sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.StartsWith($"Could not send POST {request.DisplayUrl}: ", exception.Message);
         Assert.DoesNotContain(Secret, exception.Message);
@@ -386,7 +409,7 @@ public sealed class RequestSenderTests
         ResolvedRequest request = ResolvedRequestFactory.Create("GET", s_stubUrl);
 
         HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
-            () => sender.SendAsync(request, [], TestContext.Current.CancellationToken));
+            () => sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal("GET http://stub.test/echo timed out after 100 s.", exception.Message);
     }
@@ -406,7 +429,7 @@ public sealed class RequestSenderTests
         ResolvedRequest request = ResolvedRequestFactory.Create("GET", s_stubUrl);
 
         OperationCanceledException exception = await Assert.ThrowsAsync<OperationCanceledException>(
-            () => sender.SendAsync(request, [], cancellation.Token));
+            () => sender.SendAsync(request, [], cancellationToken: cancellation.Token));
 
         Assert.Equal(cancellation.Token, exception.CancellationToken);
     }
@@ -420,7 +443,7 @@ public sealed class RequestSenderTests
         ResolvedRequest request = ResolvedRequestFactory.Create("POST", s_stubUrl, body: "secret body");
 
         HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
-            () => sender.SendAsync(request, [], TestContext.Current.CancellationToken));
+            () => sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal("Could not send POST http://stub.test/echo: No such host is known.", exception.Message);
     }
@@ -435,7 +458,7 @@ public sealed class RequestSenderTests
         ResolvedRequest request = ResolvedRequestFactory.Create("GET", s_stubUrl);
 
         HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
-            () => sender.SendAsync(request, [], TestContext.Current.CancellationToken));
+            () => sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken));
 
         string seconds = timeout.TotalSeconds.ToString(CultureInfo.CurrentCulture);
         Assert.Equal($"GET http://stub.test/echo timed out after {seconds} s.", exception.Message);
@@ -458,7 +481,7 @@ public sealed class RequestSenderTests
         Task<ReceivedResponse> send = sender.SendAsync(
             ResolvedRequestFactory.Create("GET", s_stubUrl),
             [],
-            cancellation.Token);
+            cancellationToken: cancellation.Token);
         await started.Task;
         await cancellation.CancelAsync();
 
@@ -480,7 +503,10 @@ public sealed class RequestSenderTests
             server.RedirectUrl(302, "/echo?step=2"),
             headers: CredentialHeaders());
 
-        ReceivedResponse response = await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        ReceivedResponse response = await sender.SendAsync(
+            request,
+            [],
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(200, response.StatusCode);
         Assert.Equal(2, server.Requests.Count);
@@ -508,7 +534,10 @@ public sealed class RequestSenderTests
             server.RedirectUrl(302, $"{otherOrigin.BaseUri}echo?key={Secret}"),
             headers: CredentialHeaders());
 
-        ReceivedResponse response = await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        ReceivedResponse response = await sender.SendAsync(
+            request,
+            [],
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(200, response.StatusCode);
         Assert.Equal([$"Bearer {Secret}"], Assert.Single(server.Requests).HeaderValues(AuthorizationHeader));
@@ -541,7 +570,7 @@ public sealed class RequestSenderTests
         await sender.SendAsync(
             ResolvedRequestFactory.Create("GET", new Uri(url)),
             [],
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal([$"Redirected to {expected} (302)"], redirects);
     }
@@ -559,7 +588,7 @@ public sealed class RequestSenderTests
             server.RedirectUrl(302, back.AbsoluteUri),
             headers: CredentialHeaders());
 
-        await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        await sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken);
 
         RecordedRequest last = server.Requests[^1];
         Assert.Equal("GET /echo?back=1 HTTP/1.1", last.RequestLine);
@@ -579,7 +608,10 @@ public sealed class RequestSenderTests
             "GET",
             new Uri(server.BaseUri, EchoServer.RedirectLoopPath));
 
-        ReceivedResponse response = await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        ReceivedResponse response = await sender.SendAsync(
+            request,
+            [],
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(302, response.StatusCode);
         Assert.Equal(RedirectPolicy.MaxRedirects + 1, server.Requests.Count);
@@ -608,7 +640,7 @@ public sealed class RequestSenderTests
             body: """{"title": "Write blog post"}""",
             headers: [(ContentTypeHeader, "application/json", 2), (PlainHeader, "plain", 3)]);
 
-        await sender.SendAsync(request, warnings, TestContext.Current.CancellationToken);
+        await sender.SendAsync(request, warnings, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(method, server.Requests[0].Method);
         RecordedRequest followed = server.Requests[1];
@@ -638,7 +670,7 @@ public sealed class RequestSenderTests
             body: Body,
             headers: [(ContentTypeHeader, "application/json", 2)]);
 
-        await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        await sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken);
 
         RecordedRequest followed = server.Requests[1];
         Assert.Equal($"{method} /echo HTTP/1.1", followed.RequestLine);
@@ -660,7 +692,10 @@ public sealed class RequestSenderTests
         RequestSender sender = new(httpClient, new SecretMask(), redirects.Add);
         ResolvedRequest request = ResolvedRequestFactory.Create("GET", new Uri("https://stub.test/echo"));
 
-        ReceivedResponse response = await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        ReceivedResponse response = await sender.SendAsync(
+            request,
+            [],
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal((302, 1), (response.StatusCode, sendCount));
         Assert.Empty(redirects);
@@ -687,7 +722,7 @@ public sealed class RequestSenderTests
             new Uri(url),
             headers: [(AuthorizationHeader, "Bearer written", 2)]);
 
-        await sender.SendAsync(request, [], TestContext.Current.CancellationToken);
+        await sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(
             (new Uri(location), false),
@@ -704,7 +739,7 @@ public sealed class RequestSenderTests
         ReceivedResponse response = await sender.SendAsync(
             ResolvedRequestFactory.Create("GET", s_stubUrl),
             [],
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(302, response.StatusCode);
     }
@@ -721,7 +756,7 @@ public sealed class RequestSenderTests
         ResolvedRequest request = ResolvedRequestFactory.Create("POST", s_stubUrl, body: "body");
 
         HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
-            () => sender.SendAsync(request, [], TestContext.Current.CancellationToken));
+            () => sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal("Could not send GET http://other.test/next: No such host is known.", exception.Message);
     }
@@ -749,7 +784,7 @@ public sealed class RequestSenderTests
         Task<ReceivedResponse> send = sender.SendAsync(
             ResolvedRequestFactory.Create("GET", s_stubUrl),
             [],
-            cancellation.Token);
+            cancellationToken: cancellation.Token);
         await followed.Task;
         await cancellation.CancelAsync();
 
@@ -775,7 +810,7 @@ public sealed class RequestSenderTests
             () => sender.SendAsync(
                 ResolvedRequestFactory.Create("GET", s_stubUrl),
                 [],
-                TestContext.Current.CancellationToken));
+                cancellationToken: TestContext.Current.CancellationToken));
 
         string seconds = timeout.TotalSeconds.ToString(CultureInfo.CurrentCulture);
         Assert.Equal($"GET http://stub.test/again timed out after {seconds} s.", exception.Message);
@@ -793,7 +828,7 @@ public sealed class RequestSenderTests
         ReceivedResponse response = await sender.SendAsync(
             ResolvedRequestFactory.Create("GET", s_stubUrl),
             warnings,
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(EchoServer.JsonBody, Encoding.UTF8.GetString(response.Body.Span));
         Assert.Contains(KeyValuePair.Create(ContentEncodingHeader, "gzip"), response.Headers);
@@ -813,7 +848,7 @@ public sealed class RequestSenderTests
         ReceivedResponse response = await sender.SendAsync(
             ResolvedRequestFactory.Create("GET", s_stubUrl),
             [],
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("hello"u8.ToArray(), response.Body.ToArray());
     }
@@ -828,7 +863,7 @@ public sealed class RequestSenderTests
         ReceivedResponse response = await sender.SendAsync(
             ResolvedRequestFactory.Create("GET", s_stubUrl),
             [],
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("hello"u8.ToArray(), response.Body.ToArray());
     }
@@ -844,7 +879,7 @@ public sealed class RequestSenderTests
         ReceivedResponse response = await sender.SendAsync(
             ResolvedRequestFactory.Create("GET", s_stubUrl),
             [],
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("hello"u8.ToArray(), response.Body.ToArray());
     }
@@ -859,7 +894,7 @@ public sealed class RequestSenderTests
         ReceivedResponse response = await sender.SendAsync(
             ResolvedRequestFactory.Create("GET", s_stubUrl),
             [],
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("hello"u8.ToArray(), response.Body.ToArray());
     }
@@ -874,7 +909,7 @@ public sealed class RequestSenderTests
         ReceivedResponse response = await sender.SendAsync(
             ResolvedRequestFactory.Create("GET", s_stubUrl),
             [],
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(response.Body.IsEmpty);
     }
@@ -891,7 +926,7 @@ public sealed class RequestSenderTests
         ReceivedResponse response = await sender.SendAsync(
             ResolvedRequestFactory.Create("GET", s_stubUrl),
             warnings,
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(encoded, response.Body.ToArray());
         Assert.Equal(
@@ -911,7 +946,7 @@ public sealed class RequestSenderTests
         ResolvedRequest request = ResolvedRequestFactory.Create("POST", s_stubUrl, body: "body");
 
         HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
-            () => sender.SendAsync(request, [], TestContext.Current.CancellationToken));
+            () => sender.SendAsync(request, [], cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(
             "Could not decode the response to POST http://stub.test/echo (201): the body is not valid gzip data.",
@@ -931,7 +966,7 @@ public sealed class RequestSenderTests
             () => sender.SendAsync(
                 ResolvedRequestFactory.Create("GET", s_stubUrl),
                 [],
-                TestContext.Current.CancellationToken));
+                cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(
             "Could not decode the response to GET http://stub.test/echo (200): "

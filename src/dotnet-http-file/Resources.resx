@@ -284,6 +284,10 @@
     <value>Header '{0}' ignored: a request without a body cannot have content headers (line {1}).</value>
     <comment>{0} is the header name, such as Content-Type. {1} is the line number of the header. A warning; the wording follows Visual Studio's HTTP0009. The header value is left out because it can hold a secret.</comment>
   </data>
+  <data name="DroppedContentType" xml:space="preserve">
+    <value>Content-Type on line {0} not sent: the request has no body.</value>
+    <comment>{0} is the line number of the Content-Type header. A line of the verbose log, not a warning. The header value is left out because it can hold a secret.</comment>
+  </data>
   <data name="HeaderNotSendable" xml:space="preserve">
     <value>Header '{0}' is not a valid HTTP header and cannot be sent (line {1}).</value>
     <comment>{0} is the header name. {1} is the line number of the header. The header value is left out because it can hold a secret.</comment>

@@ -41,9 +41,10 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
     /// </summary>
     /// <param name="request">The request to send.</param>
     /// <param name="warnings">
-    /// Receives a message for each header that is left out of the request, and one when the body is in a coding
-    /// that is not decoded.
+    /// Receives a message for each header that is left out of the request, apart from <c>Content-Type</c>, and one
+    /// when the body is in a coding that is not decoded.
     /// </param>
+    /// <param name="log">Receives the diagnostic lines of the first send, not of a redirect that follows.</param>
     /// <param name="cancellationToken">The caller's token.</param>
     /// <returns>
     /// The final response, with the headers as received (one entry per value), the body decoded, and the time from
@@ -62,6 +63,7 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
     public async Task<ReceivedResponse> SendAsync(
         ResolvedRequest request,
         ICollection<string> warnings,
+        Action<string>? log = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -79,7 +81,8 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
                 // A redirect that drops the body leaves its content headers behind, which is not worth a warning.
                 using HttpRequestMessage message = RequestMessageBuilder.Build(
                     current,
-                    redirectCount == 0 ? warnings : []);
+                    redirectCount == 0 ? warnings : [],
+                    redirectCount == 0 ? log : null);
 
                 // ResponseContentRead buffers the body inside the call, so the timeout covers reading it.
                 using HttpResponseMessage response = await httpClient

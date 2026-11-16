@@ -14,6 +14,9 @@ internal static class RequestMessageBuilder
     private static readonly CompositeFormat s_contentHeaderWithoutBodyFormat =
         CompositeFormat.Parse(Resources.ContentHeaderWithoutBody);
 
+    private static readonly CompositeFormat s_droppedContentTypeFormat =
+        CompositeFormat.Parse(Resources.DroppedContentType);
+
     private static readonly CompositeFormat s_headerNotSendableFormat =
         CompositeFormat.Parse(Resources.HeaderNotSendable);
 
@@ -28,8 +31,10 @@ internal static class RequestMessageBuilder
     /// </summary>
     /// <param name="request">The request, whose header lines are parallel to its headers.</param>
     /// <param name="warnings">
-    /// Receives a message for each header that is left out: a content header on a request without a body.
+    /// Receives a message for each header that is left out: a content header on a request without a body,
+    /// apart from <c>Content-Type</c>.
     /// </param>
+    /// <param name="log">Receives a line for a <c>Content-Type</c> that is left out for want of a body.</param>
     /// <remarks>
     /// Headers are added as written, without validation or rewriting. Nothing is added apart from the default
     /// <c>Content-Type</c> of a body that has none.
@@ -38,7 +43,10 @@ internal static class RequestMessageBuilder
     /// The HTTP version is not supported, or a header cannot be sent: its name is not valid, or its value holds
     /// a line break or a null character. The message never holds a header value.
     /// </exception>
-    public static HttpRequestMessage Build(ResolvedRequest request, ICollection<string> warnings)
+    public static HttpRequestMessage Build(
+        ResolvedRequest request,
+        ICollection<string> warnings,
+        Action<string>? log = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(warnings);
@@ -63,7 +71,7 @@ internal static class RequestMessageBuilder
                 message.Content = new ByteArrayContent(Encoding.UTF8.GetBytes(request.Body));
             }
 
-            AddHeaders(message, request, warnings);
+            AddHeaders(message, request, warnings, log);
 
             if (message.Content is not null && !message.Content.Headers.NonValidated.Contains(HeaderNames.ContentType))
             {
@@ -89,7 +97,11 @@ internal static class RequestMessageBuilder
             _ => throw new HttpFileException(Messages.Format(s_unsupportedHttpVersionFormat, httpVersion)),
         };
 
-    private static void AddHeaders(HttpRequestMessage message, ResolvedRequest request, ICollection<string> warnings)
+    private static void AddHeaders(
+        HttpRequestMessage message,
+        ResolvedRequest request,
+        ICollection<string> warnings,
+        Action<string>? log)
     {
         // HttpClient keeps content headers apart and refuses them on the request, so its own answer decides
         // which header is which. Without a body there is no content to hold them, and this one is never sent.
@@ -118,7 +130,16 @@ internal static class RequestMessageBuilder
 
             if (contentHeaderProbe is not null && contentHeaderProbe.Headers.TryAddWithoutValidation(name, value))
             {
-                warnings.Add(Messages.Format(s_contentHeaderWithoutBodyFormat, name, line));
+                // Visual Studio sends no Content-Type without a body and does not warn, so neither does this.
+                if (HeaderNames.Is(request.Headers[index], HeaderNames.ContentType))
+                {
+                    log?.Invoke(Messages.Format(s_droppedContentTypeFormat, line));
+                }
+                else
+                {
+                    warnings.Add(Messages.Format(s_contentHeaderWithoutBodyFormat, name, line));
+                }
+
                 continue;
             }
 

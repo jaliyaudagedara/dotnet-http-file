@@ -196,7 +196,9 @@ internal sealed class HttpFileRunner(
             ReceivedResponse response;
             try
             {
-                response = await sender.SendAsync(resolved, warnings, cancellationToken).ConfigureAwait(false);
+                response = await sender
+                    .SendAsync(resolved, warnings, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
             }
             finally
             {
