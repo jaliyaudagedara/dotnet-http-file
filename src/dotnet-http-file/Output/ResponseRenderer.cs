@@ -104,6 +104,16 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     }
 
     /// <summary>
+    /// Writes <paramref name="message"/>, advice on a failed response, to standard error.
+    /// </summary>
+    public void RenderHint(string message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        WriteMaskedLines(console.Error, message, s_dependencyStyle);
+    }
+
+    /// <summary>
     /// Writes <paramref name="message"/> to standard error as a warning.
     /// </summary>
     public void RenderWarning(string message)

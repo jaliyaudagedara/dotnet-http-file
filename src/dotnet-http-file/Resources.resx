@@ -504,6 +504,10 @@
     <value>unexpected {0}: {1}</value>
     <comment>Shown after 'error: ' for a failure the tool did not foresee. {0} is the .NET exception type name. {1} is the exception message, or for an AggregateException the comma-separated type names of the exceptions it holds.</comment>
   </data>
+  <data name="WrongTenantHint" xml:space="preserve">
+    <value>The token is for another tenant. Set "tenantId" on the EntraAccessToken variable, or run with AZURE_TOKEN_CREDENTIALS=AzureCliCredential to use only the Azure CLI's sign-in.</value>
+    <comment>Shown after a 401 response with InvalidAuthenticationTokenTenant to a request that used an EntraAccessToken variable. "tenantId" is the name of a field in the environment file and EntraAccessToken is a provider name; AZURE_TOKEN_CREDENTIALS=AzureCliCredential is an environment variable setting, and AzureCliCredential is a credential name; none of these are translated.</comment>
+  </data>
   <data name="PickerTitle" xml:space="preserve">
     <value>Select a request to run</value>
     <comment>The title of the interactive request picker. Square brackets are not allowed here.</comment>

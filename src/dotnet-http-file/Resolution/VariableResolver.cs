@@ -33,9 +33,12 @@ internal sealed class VariableResolver(
         CompositeFormat.Parse(Resources.VariableNotDefinedNoEnvironment);
 
     // Keyed by definition, not by name: a name can be defined again further down the file.
-    private readonly Dictionary<FileVariable, string> _fileVariableValues = [with(ReferenceEqualityComparer.Instance)];
+    private readonly Dictionary<FileVariable, FileVariableValue> _fileVariableValues =
+        [with(ReferenceEqualityComparer.Instance)];
 
     private readonly Dictionary<string, string> _providerValues = [with(StringComparer.Ordinal)];
+
+    private bool _usesEntraAccessToken;
 
     /// <summary>
     /// Resolves the URL, headers and body of <paramref name="request"/>.
@@ -49,6 +52,7 @@ internal sealed class VariableResolver(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        _usesEntraAccessToken = false;
         string urlText = await ResolveAsync(request.Url, request.Line, cancellationToken).ConfigureAwait(false);
 
         // Masked from the resolved text, not from the Uri, whose escaping would hide a secret from the mask.
@@ -77,6 +81,7 @@ internal sealed class VariableResolver(
             HttpVersion = request.HttpVersion,
             Body = body,
             HeaderLines = [.. request.Headers.Select(header => header.Line)],
+            UsesEntraAccessToken = _usesEntraAccessToken,
         };
     }
 
@@ -128,14 +133,22 @@ internal sealed class VariableResolver(
 
         if (visibleVariables.TryGetValue(name, out FileVariable? variable))
         {
-            if (!_fileVariableValues.TryGetValue(variable, out string? value))
+            if (!_fileVariableValues.TryGetValue(variable, out FileVariableValue? value))
             {
                 // A file variable sees only the definitions above it, so this recursion cannot loop.
-                value = await ResolveAsync(variable.Value, variable.Line, cancellationToken).ConfigureAwait(false);
+                bool usedBefore = _usesEntraAccessToken;
+                _usesEntraAccessToken = false;
+                value = new FileVariableValue(
+                    await ResolveAsync(variable.Value, variable.Line, cancellationToken).ConfigureAwait(false),
+                    _usesEntraAccessToken);
                 _fileVariableValues.Add(variable, value);
+                _usesEntraAccessToken = usedBefore;
             }
 
-            return value;
+            // The value is cached, so what it was made from has to be remembered with it.
+            _usesEntraAccessToken |= value.UsesEntraAccessToken;
+
+            return value.Text;
         }
 
         if (!environment.TryGetValue(name, out EnvironmentValue? environmentValue))
@@ -157,6 +170,11 @@ internal sealed class VariableResolver(
         ProviderEnvironmentValue value,
         CancellationToken cancellationToken)
     {
+        _usesEntraAccessToken |= string.Equals(
+            value.Provider,
+            EntraAccessTokenProvider.ProviderName,
+            StringComparison.Ordinal);
+
         if (_providerValues.TryGetValue(name, out string? secret))
         {
             return secret;
@@ -187,6 +205,8 @@ internal sealed class VariableResolver(
 
         return ReferenceEvaluator.Evaluate(reference, exchange);
     }
+
+    private sealed record FileVariableValue(string Text, bool UsesEntraAccessToken);
 
     private HttpFileException NotDefined(string name, int line)
     {

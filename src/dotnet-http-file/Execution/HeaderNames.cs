@@ -11,6 +11,7 @@ internal static class HeaderNames
     public const string Cookie = "Cookie";
     public const string ProxyAuthorization = "Proxy-Authorization";
     public const string TransferEncoding = "Transfer-Encoding";
+    public const string WwwAuthenticate = "WWW-Authenticate";
 
     /// <summary>
     /// Whether <paramref name="header"/> is named <paramref name="name"/>, ignoring case as HTTP does.

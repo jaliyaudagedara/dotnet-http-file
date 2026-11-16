@@ -1646,6 +1646,110 @@ public sealed class HttpFileRunnerTests
             line => Assert.StartsWith("verbose: Token for api://todos/.default: ", line, StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task RunAsync_WrongTenant401WithEntraToken_PrintsHint()
+    {
+        using Harness harness = new();
+        harness.Providers.Add(new FakeSecretProvider(EntraAccessTokenProvider.ProviderName, _ => "tok-xyz"));
+        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(WrongTenantResponse()));
+        string path = await harness.WriteProviderFilesAsync();
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
+
+        Assert.Equal(ExitCodes.ErrorStatus, exitCode);
+        Assert.Contains(
+            harness.ErrorLines,
+            line => line.Contains("\"tenantId\"", StringComparison.Ordinal)
+                && line.Contains("AZURE_TOKEN_CREDENTIALS=AzureCliCredential", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsync_WrongTenant401WithoutEntraToken_PrintsNoHint()
+    {
+        using Harness harness = new();
+        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(WrongTenantResponse()));
+        string path = await harness.WriteHttpFileAsync(
+            """
+            GET http://localhost/a
+            Authorization: Bearer literal-token
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path));
+
+        Assert.Equal(ExitCodes.ErrorStatus, exitCode);
+        Assert.DoesNotContain("tenantId", harness.Error.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_WrongTenantInBody_PrintsHint()
+    {
+        using Harness harness = new();
+        harness.Providers.Add(new FakeSecretProvider(EntraAccessTokenProvider.ProviderName, _ => "tok-xyz"));
+        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = new StringContent(
+                    """{"error":{"code":"InvalidAuthenticationTokenTenant"}}""",
+                    Encoding.UTF8,
+                    MediaTypeNames.Application.Json),
+            }));
+        string path = await harness.WriteProviderFilesAsync();
+
+        await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
+
+        Assert.Contains("tenantId", harness.Error.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_WrongTenantAfterRedirect_PrintsHint()
+    {
+        using Harness harness = new();
+        harness.Providers.Add(new FakeSecretProvider(EntraAccessTokenProvider.ProviderName, _ => "tok-xyz"));
+        harness.CreateHandler = _ => new StubHandler((request, _) => Task.FromResult(
+            request.RequestUri!.AbsolutePath == "/a"
+                ? new HttpResponseMessage(HttpStatusCode.Found)
+                {
+                    Headers = { Location = new Uri("/b", UriKind.Relative) },
+                }
+                : WrongTenantResponse()));
+        string path = await harness.WriteProviderFilesAsync();
+
+        await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
+
+        Assert.Contains("tenantId", harness.Error.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_WrongTenantInDependency_PrintsHintAndStops()
+    {
+        using Harness harness = new();
+        harness.Providers.Add(new FakeSecretProvider(EntraAccessTokenProvider.ProviderName, _ => "tok-xyz"));
+        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(WrongTenantResponse()));
+        await harness.WriteFileAsync(
+            EnvironmentFileLocator.FileName,
+            """{ "dev": { "token": { "provider": "EntraAccessToken" } } }""");
+        string path = await harness.WriteHttpFileAsync(
+            """
+            # @name login
+            GET http://localhost/a
+            Authorization: Bearer {{token}}
+
+            ###
+
+            # @name next
+            GET http://localhost/b?id={{login.response.body.$.id}}
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path)
+        {
+            RequestName = "next",
+            EnvironmentName = "dev",
+        });
+
+        Assert.Equal(ExitCodes.ErrorStatus, exitCode);
+        Assert.Contains("tenantId", harness.Error.Output, StringComparison.Ordinal);
+    }
+
     // Windows refuses a second open of a file held without sharing; elsewhere the file loses its read permission.
     private static IDisposable MakeUnreadable(string path)
     {
@@ -1680,6 +1784,15 @@ public sealed class HttpFileRunnerTests
 
         public Task<string> ResolveAsync(SecretRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(resolve(request));
+    }
+
+    private static HttpResponseMessage WrongTenantResponse()
+    {
+        HttpResponseMessage response = new(HttpStatusCode.Unauthorized);
+        response.Headers.WwwAuthenticate.ParseAdd(
+            """Bearer error="invalid_token", error_description="InvalidAuthenticationTokenTenant" """.Trim());
+
+        return response;
     }
 
     private static HttpResponseMessage JsonResponse(string body) =>

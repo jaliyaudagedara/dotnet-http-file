@@ -26,6 +26,10 @@ internal sealed class HttpFileRunner(
     Func<string, string?> getEnvironmentVariable)
 {
     private const string DotEnvFileName = ".env";
+    private const int UnauthorizedStatusCode = 401;
+    private const string WrongTenantCode = "InvalidAuthenticationTokenTenant";
+
+    private static readonly byte[] s_wrongTenantCodeUtf8 = Encoding.UTF8.GetBytes(WrongTenantCode);
 
     private static readonly CompositeFormat s_dependencyFailedFormat =
         CompositeFormat.Parse(Resources.DependencyFailed);
@@ -220,6 +224,7 @@ internal sealed class HttpFileRunner(
             HttpExchange exchange = await SendAsync(dependency).ConfigureAwait(false);
 
             renderer.RenderDependency(dependency, exchange);
+            RenderWrongTenantHint(renderer, exchange);
             if (!exchange.Response.IsSuccess)
             {
                 renderer.RenderError(Messages.Format(
@@ -234,6 +239,7 @@ internal sealed class HttpFileRunner(
 
         HttpExchange targetExchange = await SendAsync(target).ConfigureAwait(false);
         await renderer.RenderAsync(targetExchange, cancellationToken).ConfigureAwait(false);
+        RenderWrongTenantHint(renderer, targetExchange);
 
         return targetExchange.Response.IsSuccess ? ExitCodes.Success : ExitCodes.ErrorStatus;
 
@@ -272,6 +278,23 @@ internal sealed class HttpFileRunner(
 
     // The request line as the file has it: a variable in the URL is not expanded, so no value can show.
     private static string AsWritten(RequestDefinition request) => $"{request.Method} {request.Url.Raw}";
+
+    private static void RenderWrongTenantHint(ResponseRenderer renderer, HttpExchange exchange)
+    {
+        ReceivedResponse response = exchange.Response;
+        if (response.StatusCode != UnauthorizedStatusCode || !exchange.Request.UsesEntraAccessToken)
+        {
+            return;
+        }
+
+        bool isInChallenge = response.Headers.Any(header =>
+            HeaderNames.Is(header, HeaderNames.WwwAuthenticate)
+            && header.Value.Contains(WrongTenantCode, StringComparison.Ordinal));
+        if (isInChallenge || response.Body.Span.IndexOf(s_wrongTenantCodeUtf8) >= 0)
+        {
+            renderer.RenderHint(Resources.WrongTenantHint);
+        }
+    }
 
     private static void LogExchange(DiagnosticLog log, ResolvedRequest request, ReceivedResponse response)
     {

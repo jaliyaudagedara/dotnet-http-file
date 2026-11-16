@@ -34,6 +34,11 @@ internal sealed record ResolvedRequest(string Method, Uri Url, IReadOnlyList<Key
     /// </summary>
     public IReadOnlyList<int> HeaderLines { get; init; } = [];
 
+    /// <summary>
+    /// Whether the URL, a header or the body took a value from the <c>EntraAccessToken</c> provider.
+    /// </summary>
+    public bool UsesEntraAccessToken { get; init; }
+
     // The generated record text would print the URL, headers and body, which can hold provider-resolved values.
     public override string ToString() => $"{Method} {DisplayUrl}";
 }
