@@ -23,7 +23,8 @@
   </Folder>
   <Folder Name="/samples/" />
   <Folder Name="/samples/Basics/">
-    <File Path="samples/Basics/Basics.http" />
+    <File Path="samples/Basics/Named.http" />
+    <File Path="samples/Basics/Titled.http" />
   </Folder>
   <Folder Name="/samples/Entra/">
     <File Path="samples/Entra/Entra.http" />

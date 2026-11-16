@@ -25,7 +25,8 @@ In a terminal it prints the request, with secrets masked, then the response stat
 as the server sent them. When piped, it writes the raw body to stdout. Without `--name`, a terminal gets a
 request picker.
 
-Try `samples/Basics/Basics.http` (no setup) or `samples/Entra/Entra.http` (needs `az login`).
+Try `samples/Basics/Named.http` and `samples/Basics/Titled.http` (no setup), or `samples/Entra/Entra.http` (needs
+`az login`).
 
 ## Options
 

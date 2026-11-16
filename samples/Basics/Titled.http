@@ -1,0 +1,18 @@
+# Each request has a title on its ### line, which --name selects (case doesn't matter).
+
+@BaseUrl=https://jsonplaceholder.typicode.com
+
+### List todos
+GET {{BaseUrl}}/todos?_limit=3
+
+### Create a todo
+POST {{BaseUrl}}/todos
+Content-Type: application/json
+
+{
+    "title": "Try dotnet http-file",
+    "completed": false
+}
+
+### Get the first todo
+GET {{BaseUrl}}/todos/1
