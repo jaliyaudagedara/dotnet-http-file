@@ -2,13 +2,19 @@ using System.IO.Compression;
 
 namespace DotNetHttpFile.Execution;
 
-/// <summary>Decodes a response body from the content codings the tool supports, gzip and deflate.</summary>
+/// <summary>
+/// Decodes a response body from the content codings the tool supports, gzip and deflate.
+/// </summary>
 internal static class ContentDecoder
 {
-    /// <summary>The most bytes a body may decode to, 100 MiB.</summary>
+    /// <summary>
+    /// The most bytes a body may decode to, 100 MiB.
+    /// </summary>
     public const int MaxDecodedLength = MaxDecodedMebibytes * BytesPerMebibyte;
 
-    /// <summary><see cref="MaxDecodedLength"/> in MiB, for messages.</summary>
+    /// <summary>
+    /// <see cref="MaxDecodedLength"/> in MiB, for messages.
+    /// </summary>
     public const int MaxDecodedMebibytes = 100;
 
     private const int BytesPerMebibyte = 1024 * 1024;
@@ -26,7 +32,9 @@ internal static class ContentDecoder
     private const int ZlibMaxWindow = 7;
     private const int ZlibHeaderCheckDivisor = 31;
 
-    /// <summary>Whether <paramref name="coding"/> is one the tool decodes.</summary>
+    /// <summary>
+    /// Whether <paramref name="coding"/> is one the tool decodes.
+    /// </summary>
     public static bool IsSupported(string coding)
     {
         ArgumentNullException.ThrowIfNull(coding);

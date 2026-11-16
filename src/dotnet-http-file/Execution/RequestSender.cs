@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Net.Http.Headers;
 using System.Security.Authentication;
 using System.Text;
@@ -7,7 +6,9 @@ using DotNetHttpFile.Resolution;
 
 namespace DotNetHttpFile.Execution;
 
-/// <summary>Sends requests and follows the redirects they are answered with.</summary>
+/// <summary>
+/// Sends requests and follows the redirects they are answered with.
+/// </summary>
 /// <param name="httpClient">The client to send through. Its handler must not follow redirects itself.</param>
 /// <param name="secretMask">The provider-resolved values of the run.</param>
 /// <param name="reportRedirect">Receives a message for each redirect that is followed.</param>
@@ -91,7 +92,7 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
                     : null;
                 if (next is not null)
                 {
-                    reportRedirect(Format(s_redirectedFormat, next.DisplayUrl, (int)response.StatusCode));
+                    reportRedirect(Messages.Format(s_redirectedFormat, next.DisplayUrl, (int)response.StatusCode));
                     current = next;
                     continue;
                 }
@@ -113,9 +114,13 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
             // Only the caller and the timeout can cancel a send, and the caller did not.
-            throw new HttpFileException(
-                Format(s_sendTimedOutFormat, current.Method, current.DisplayUrl, httpClient.Timeout.TotalSeconds),
-                exception);
+            string text = Messages.Format(
+                s_sendTimedOutFormat,
+                current.Method,
+                current.DisplayUrl,
+                httpClient.Timeout.TotalSeconds);
+
+            throw new HttpFileException(text, exception);
         }
         catch (OperationCanceledException exception)
         {
@@ -126,12 +131,12 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
         {
             // For a TLS failure the outer message only says to look at the inner one.
             string text = exception.InnerException is AuthenticationException authenticationException
-                ? Format(
+                ? Messages.Format(
                     s_sendFailedCertificateNotTrustedFormat,
                     current.Method,
                     current.DisplayUrl,
                     authenticationException.Message)
-                : Format(s_sendFailedFormat, current.Method, current.DisplayUrl, exception.Message);
+                : Messages.Format(s_sendFailedFormat, current.Method, current.DisplayUrl, exception.Message);
 
             throw new HttpFileException(text, exception);
         }
@@ -152,11 +157,11 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
         IReadOnlyList<string> unsupportedCodings = response.UnsupportedCodings;
         if (unsupportedCodings.Count > 0)
         {
-            warnings.Add(Format(
+            warnings.Add(Messages.Format(
                 s_responseNotDecodedFormat,
                 request.Method,
                 request.DisplayUrl,
-                string.Join(", ", unsupportedCodings)));
+                string.Join(Messages.ListSeparator, unsupportedCodings)));
 
             return response;
         }
@@ -195,7 +200,7 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
         string coding,
         Exception? innerException = null) =>
         new(
-            Format(
+            Messages.Format(
                 format,
                 request.Method,
                 request.DisplayUrl,
@@ -227,7 +232,4 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
             }
         }
     }
-
-    private static string Format(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
-        string.Format(CultureInfo.CurrentCulture, format, arguments);
 }

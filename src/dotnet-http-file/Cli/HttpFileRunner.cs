@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using DotNetHttpFile.Environments;
 using DotNetHttpFile.Execution;
@@ -9,7 +8,9 @@ using DotNetHttpFile.Secrets;
 
 namespace DotNetHttpFile.Cli;
 
-/// <summary>Runs one request of an <c>.http</c> file, after the requests it refers to.</summary>
+/// <summary>
+/// Runs one request of an <c>.http</c> file, after the requests it refers to.
+/// </summary>
 internal sealed class HttpFileRunner(
     ConsoleStreams console,
     IRequestPicker picker,
@@ -19,7 +20,6 @@ internal sealed class HttpFileRunner(
     Func<string, string?> getEnvironmentVariable)
 {
     private const string DotEnvFileName = ".env";
-    private const string NameSeparator = ", ";
 
     private static readonly CompositeFormat s_dependencyFailedFormat =
         CompositeFormat.Parse(Resources.DependencyFailed);
@@ -43,12 +43,13 @@ internal sealed class HttpFileRunner(
     private static readonly CompositeFormat s_unexpectedErrorFormat =
         CompositeFormat.Parse(Resources.UnexpectedError);
 
-    /// <summary>Sends the request <paramref name="options"/> selects and writes the outcome to the console.</summary>
+    /// <summary>
+    /// Sends the request <paramref name="options"/> selects and writes the outcome to the console.
+    /// </summary>
     /// <returns>
     /// <see cref="ExitCodes.Success"/> for a 2xx response, <see cref="ExitCodes.ErrorStatus"/> for any other
     /// response or for one whose body could not be decoded, <see cref="ExitCodes.NotSent"/> when the request could
-    /// not be sent and
-    /// <see cref="ExitCodes.Cancelled"/> when <paramref name="cancellationToken"/> was cancelled.
+    /// not be sent and <see cref="ExitCodes.Cancelled"/> when <paramref name="cancellationToken"/> was cancelled.
     /// </returns>
     public async Task<int> RunAsync(RunOptions options, CancellationToken cancellationToken = default)
     {
@@ -85,21 +86,18 @@ internal sealed class HttpFileRunner(
         catch (Exception exception)
         {
             // A stack trace helps nobody at a prompt; the type and message are enough to report a bug.
-            renderer.RenderError(Format(s_unexpectedErrorFormat, exception.GetType().Name, Detail(exception)));
+            renderer.RenderError(Messages.Format(s_unexpectedErrorFormat, exception.GetType().Name, Detail(exception)));
 
             return ExitCodes.NotSent;
         }
     }
-
-    private static string Format(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
-        string.Format(CultureInfo.CurrentCulture, format, arguments);
 
     // The message of an AggregateException quotes the messages of the exceptions it holds, which nothing has
     // vetted for display, so only their types are named.
     private static string Detail(Exception exception) =>
         exception is AggregateException aggregate
             ? string.Join(
-                NameSeparator,
+                Messages.ListSeparator,
                 aggregate.Flatten().InnerExceptions.Select(innerException => innerException.GetType().Name))
             : exception.Message;
 
@@ -128,11 +126,6 @@ internal sealed class HttpFileRunner(
             .ConfigureAwait(false);
     }
 
-    private static string StatusText(ReceivedResponse response) =>
-        response.ReasonPhrase.Length == 0
-            ? response.StatusCode.ToString(CultureInfo.InvariantCulture)
-            : string.Create(CultureInfo.InvariantCulture, $"{response.StatusCode} {response.ReasonPhrase}");
-
     private async Task<int> RunCoreAsync(
         RunOptions options,
         SecretMask secretMask,
@@ -142,7 +135,7 @@ internal sealed class HttpFileRunner(
         string filePath = options.FilePath;
         if (!File.Exists(filePath))
         {
-            throw new HttpFileException(Format(s_fileNotFoundFormat, filePath));
+            throw new HttpFileException(Messages.Format(s_fileNotFoundFormat, filePath));
         }
 
         HttpFile file = await ReadFilesAsync(() => HttpFileParser.LoadAsync(filePath, cancellationToken))
@@ -175,10 +168,10 @@ internal sealed class HttpFileRunner(
             renderer.RenderDependency(dependency, exchange);
             if (!exchange.Response.IsSuccess)
             {
-                renderer.RenderError(Format(
+                renderer.RenderError(Messages.Format(
                     s_dependencyFailedFormat,
                     dependency.Name,
-                    StatusText(exchange.Response),
+                    ResponseRenderer.StatusText(exchange.Response),
                     target.Name ?? $"{target.Method} {target.Url.Raw}"));
 
                 return ExitCodes.ErrorStatus;
@@ -225,19 +218,19 @@ internal sealed class HttpFileRunner(
         IReadOnlyList<RequestDefinition> requests = file.Requests;
         if (requests.Count == 0)
         {
-            throw new HttpFileException(Format(s_noRequestsFormat, file.Path));
+            throw new HttpFileException(Messages.Format(s_noRequestsFormat, file.Path));
         }
 
         string[] names = [.. requests.Select(request => request.Name).OfType<string>()];
-        string nameList = string.Join(NameSeparator, names);
+        string nameList = string.Join(Messages.ListSeparator, names);
 
         if (requestName is not null)
         {
             return requests.FirstOrDefault(
                     request => string.Equals(request.Name, requestName, StringComparison.Ordinal))
                 ?? throw new HttpFileException(names.Length == 0
-                    ? Format(s_requestNameNotFoundNoneNamedFormat, requestName, file.Path)
-                    : Format(s_requestNameNotFoundFormat, requestName, file.Path, nameList));
+                    ? Messages.Format(s_requestNameNotFoundNoneNamedFormat, requestName, file.Path)
+                    : Messages.Format(s_requestNameNotFoundFormat, requestName, file.Path, nameList));
         }
 
         if (requests.Count == 1)
@@ -251,8 +244,8 @@ internal sealed class HttpFileRunner(
         }
 
         throw new HttpFileException(names.Length == 0
-            ? Format(s_multipleRequestsNoneNamedFormat, file.Path, requests.Count)
-            : Format(s_multipleRequestsNoNameFormat, file.Path, requests.Count, nameList));
+            ? Messages.Format(s_multipleRequestsNoneNamedFormat, file.Path, requests.Count)
+            : Messages.Format(s_multipleRequestsNoNameFormat, file.Path, requests.Count, nameList));
     }
 
     private DynamicVariables CreateDynamicVariables(string httpFilePath)

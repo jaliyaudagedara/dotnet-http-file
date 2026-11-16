@@ -202,7 +202,7 @@ public sealed class RequestMessageBuilderTests
     [Fact]
     public void Build_HeaderLinesNotParallelToHeaders_ThrowsArgumentException()
     {
-        ResolvedRequest request = new("GET", s_url, HttpVersion: null, [new("Accept", "*/*")], Body: null)
+        ResolvedRequest request = new("GET", s_url, [new("Accept", "*/*")])
         {
             DisplayUrl = s_url.OriginalString,
         };

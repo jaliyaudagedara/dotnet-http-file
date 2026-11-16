@@ -219,9 +219,15 @@ public sealed class VisualStudioConformanceTests
     }
 
     private static string[] HeaderLines(IEnumerable<(string Name, string Value)> headers) =>
-        [.. headers.Select(header => $"{header.Name.ToUpperInvariant()}: {header.Value}").Order(StringComparer.Ordinal)];
+        [
+            .. headers
+                .Select(header => $"{header.Name.ToUpperInvariant()}: {header.Value}")
+                .Order(StringComparer.Ordinal),
+        ];
 
-    /// <summary>An echo server and a temporary copy of the Visual Studio capture that points at it.</summary>
+    /// <summary>
+    /// An echo server and a temporary copy of the Visual Studio capture that points at it.
+    /// </summary>
     private sealed class Replay : IAsyncDisposable
     {
         private const string CaptureAddress = "http://localhost:5199";
@@ -240,7 +246,9 @@ public sealed class VisualStudioConformanceTests
             _error.Profile.Width = Width;
         }
 
-        /// <summary>The value the server expects in <c>Host</c>, such as <c>127.0.0.1:50123</c>.</summary>
+        /// <summary>
+        /// The value the server expects in <c>Host</c>, such as <c>127.0.0.1:50123</c>.
+        /// </summary>
         public string Authority => _server.BaseUri.Authority;
 
         public IReadOnlyList<RecordedRequest> Requests => _server.Requests;
@@ -309,7 +317,11 @@ public sealed class VisualStudioConformanceTests
                 _ => null);
 
             return await runner.RunAsync(
-                new RunOptions(path, requestName, environmentName, ForcedMode: null, Insecure: false),
+                new RunOptions(path)
+                {
+                    RequestName = requestName,
+                    EnvironmentName = environmentName,
+                },
                 cancellationToken);
         }
 

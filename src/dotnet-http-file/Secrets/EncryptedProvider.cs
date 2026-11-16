@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
@@ -42,8 +41,7 @@ internal sealed class EncryptedProvider : ISecretProvider
         string value = request.GetRequiredString(ProviderName, ValueField);
         if (!OperatingSystem.IsWindows())
         {
-            throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_encryptedWindowsOnlyFormat, request.VariableName));
+            throw new HttpFileException(Messages.Format(s_encryptedWindowsOnlyFormat, request.VariableName));
         }
 
         return Unprotect(request.VariableName, value);
@@ -65,15 +63,11 @@ internal sealed class EncryptedProvider : ISecretProvider
         }
         catch (FormatException exception)
         {
-            throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_encryptedInvalidBase64Format, variableName),
-                exception);
+            throw new HttpFileException(Messages.Format(s_encryptedInvalidBase64Format, variableName), exception);
         }
         catch (CryptographicException exception)
         {
-            throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_encryptedCannotDecryptFormat, variableName),
-                exception);
+            throw new HttpFileException(Messages.Format(s_encryptedCannotDecryptFormat, variableName), exception);
         }
     }
 }

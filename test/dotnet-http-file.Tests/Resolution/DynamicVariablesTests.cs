@@ -388,7 +388,7 @@ public sealed class DynamicVariablesTests
             TimeProvider.System,
             new Random(Seed),
             _ => null,
-            _ => Task.FromResult(new DotEnvFile(DotEnvPath, Values: null)));
+            _ => Task.FromResult(new DotEnvFile(DotEnvPath)));
 
         HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
             () => variables.EvaluateAsync(
@@ -421,8 +421,10 @@ public sealed class DynamicVariablesTests
             {
                 received = cancellationToken;
 
-                return Task.FromResult(
-                    new DotEnvFile(DotEnvPath, new Dictionary<string, string> { ["A"] = "1" }));
+                return Task.FromResult(new DotEnvFile(DotEnvPath)
+                {
+                    Values = new Dictionary<string, string> { ["A"] = "1" },
+                });
             });
 
         await variables.EvaluateAsync(new DynamicSegment("dotenv", ["A"]), cancellation.Token);
@@ -470,7 +472,9 @@ public sealed class DynamicVariablesTests
             timeProvider,
             new Random(Seed),
             name => name == "USERNAME" ? "userFromProcess" : null,
-            _ => Task.FromResult(
-                new DotEnvFile(DotEnvPath, new Dictionary<string, string> { ["USERNAME"] = "userFromDotenv" })));
+            _ => Task.FromResult(new DotEnvFile(DotEnvPath)
+            {
+                Values = new Dictionary<string, string> { ["USERNAME"] = "userFromDotenv" },
+            }));
     }
 }

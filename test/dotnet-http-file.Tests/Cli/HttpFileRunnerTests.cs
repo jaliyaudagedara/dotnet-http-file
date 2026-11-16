@@ -39,7 +39,7 @@ public sealed class HttpFileRunnerTests
             GET {server.BaseUri}other
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "todos", null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "todos" });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(["GET /json HTTP/1.1"], server.Requests.Select(request => request.RequestLine));
@@ -59,7 +59,7 @@ public sealed class HttpFileRunnerTests
             GET {server.BaseUri}not-found
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "missing", null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "missing" });
 
         Assert.Equal(ExitCodes.ErrorStatus, exitCode);
         Assert.Contains(
@@ -87,7 +87,7 @@ public sealed class HttpFileRunnerTests
             GET {{{server.BaseUri}}}todos/{{createToDo.response.body.$.items[1].id}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "getToDo", null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "getToDo" });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(
@@ -116,7 +116,7 @@ public sealed class HttpFileRunnerTests
             GET {{{server.BaseUri}}}todos/{{createToDo.response.body.$.id}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "getToDo", null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "getToDo" });
 
         Assert.Equal(ExitCodes.ErrorStatus, exitCode);
         Assert.Equal(["POST /not-found HTTP/1.1"], server.Requests.Select(request => request.RequestLine));
@@ -150,7 +150,7 @@ public sealed class HttpFileRunnerTests
             GET http://localhost/todos/{{createToDo.response.body.$.id}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "getToDo", null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "getToDo" });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(["/todos", "/todos/7"], sent);
@@ -164,7 +164,7 @@ public sealed class HttpFileRunnerTests
             Task.FromResult(GzipResponse(HttpStatusCode.OK, "not gzip"u8.ToArray())));
         string path = await harness.WriteHttpFileAsync("GET http://localhost/todos");
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.ErrorStatus, exitCode);
         Assert.Empty(harness.OutputLines);
@@ -198,7 +198,7 @@ public sealed class HttpFileRunnerTests
             GET http://localhost/todos/{{createToDo.response.body.$.id}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "getToDo", null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "getToDo" });
 
         Assert.Equal(ExitCodes.ErrorStatus, exitCode);
         Assert.Equal(["/todos"], sent);
@@ -230,7 +230,7 @@ public sealed class HttpFileRunnerTests
             GET http://localhost/a
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(
@@ -256,7 +256,7 @@ public sealed class HttpFileRunnerTests
             GET http://localhost/b
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(
@@ -284,7 +284,7 @@ public sealed class HttpFileRunnerTests
             GET {server.BaseUri}second
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(["first", null], harness.Picker.Offered.Select(request => request.Name));
@@ -305,7 +305,7 @@ public sealed class HttpFileRunnerTests
             GET http://localhost/b
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(["error: No request was selected."], harness.ErrorLines);
@@ -319,7 +319,7 @@ public sealed class HttpFileRunnerTests
         using Harness harness = new() { IsInputRedirected = true };
         string path = await harness.WriteHttpFileAsync($"GET {server.BaseUri}only");
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(["GET /only HTTP/1.1"], server.Requests.Select(request => request.RequestLine));
@@ -341,7 +341,7 @@ public sealed class HttpFileRunnerTests
             GET http://localhost/b
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "Alpha", null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "Alpha" });
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(
@@ -356,7 +356,7 @@ public sealed class HttpFileRunnerTests
         using Harness harness = new();
         string path = await harness.WriteHttpFileAsync("GET http://localhost/a");
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "todos", null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "todos" });
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(
@@ -370,7 +370,7 @@ public sealed class HttpFileRunnerTests
         using Harness harness = new();
         string path = await harness.WriteHttpFileAsync("@host = http://localhost");
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal([$"error: {path} has no requests."], harness.ErrorLines);
@@ -402,7 +402,11 @@ public sealed class HttpFileRunnerTests
             X-Api-Key: {{token}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "todos", "dev", null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path)
+        {
+            RequestName = "todos",
+            EnvironmentName = "dev",
+        });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         RecordedRequest received = Assert.Single(server.Requests);
@@ -430,7 +434,7 @@ public sealed class HttpFileRunnerTests
         });
         string path = await harness.WriteHttpFileAsync("GET http://localhost/slow");
 
-        Task<int> run = harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        Task<int> run = harness.RunAsync(new RunOptions(path));
         await sendStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
         await cancellation.CancelAsync();
         int exitCode = await run;
@@ -449,7 +453,7 @@ public sealed class HttpFileRunnerTests
             _ => throw new HttpFileException("Could not get a token.", new InvalidOperationException(InnerMarker))));
         string path = await harness.WriteProviderFilesAsync();
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, "dev", null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(["error: Could not get a token."], harness.ErrorLines);
@@ -465,7 +469,7 @@ public sealed class HttpFileRunnerTests
             _ => throw new InvalidOperationException("Something broke.")));
         string path = await harness.WriteProviderFilesAsync();
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, "dev", null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(["error: unexpected InvalidOperationException: Something broke."], harness.ErrorLines);
@@ -477,7 +481,7 @@ public sealed class HttpFileRunnerTests
         using Harness harness = new();
         string path = Path.Combine(harness.Directory.DirectoryPath, HttpFileName);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal([$"error: File '{path}' was not found."], harness.ErrorLines);
@@ -489,7 +493,7 @@ public sealed class HttpFileRunnerTests
         using Harness harness = new();
         string path = harness.Directory.CreateDirectory(HttpFileName);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal([$"error: File '{path}' was not found."], harness.ErrorLines);
@@ -505,7 +509,7 @@ public sealed class HttpFileRunnerTests
         int exitCode;
         using (MakeUnreadable(path))
         {
-            exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+            exitCode = await harness.RunAsync(new RunOptions(path));
         }
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
@@ -527,7 +531,7 @@ public sealed class HttpFileRunnerTests
         int exitCode;
         using (MakeUnreadable(environmentFilePath))
         {
-            exitCode = await harness.RunAsync(new RunOptions(path, null, "dev", null, Insecure: false));
+            exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
         }
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
@@ -547,7 +551,7 @@ public sealed class HttpFileRunnerTests
         int exitCode;
         using (MakeUnreadable(dotEnvPath))
         {
-            exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+            exitCode = await harness.RunAsync(new RunOptions(path));
         }
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
@@ -567,7 +571,7 @@ public sealed class HttpFileRunnerTests
                 new AggregateException(new TimeoutException(InnerMarker)))));
         string path = await harness.WriteProviderFilesAsync();
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, "dev", null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(
@@ -605,7 +609,7 @@ public sealed class HttpFileRunnerTests
             X-Api-Key: {{apiKey}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, "dev", null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal([expected], harness.ErrorLines);
@@ -628,7 +632,7 @@ public sealed class HttpFileRunnerTests
             }));
         string path = await harness.WriteProviderFilesAsync();
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, "dev", null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
 
         Assert.Equal(ExitCodes.Cancelled, exitCode);
         Assert.Equal(["error: cancelled"], harness.ErrorLines);
@@ -645,7 +649,7 @@ public sealed class HttpFileRunnerTests
             Content-Type: application/json
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(
@@ -663,7 +667,7 @@ public sealed class HttpFileRunnerTests
         using Harness harness = new() { IsOutputRedirected = true };
         string path = await harness.WriteHttpFileAsync($"GET {server.BaseUri}json");
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(EchoServer.JsonBody, Encoding.UTF8.GetString(harness.StandardOutput.ToArray()));
@@ -678,7 +682,7 @@ public sealed class HttpFileRunnerTests
         using Harness harness = new() { IsOutputRedirected = true };
         string path = await harness.WriteHttpFileAsync($"GET {server.BaseUri}json");
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, OutputMode.Full, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { ForcedMode = OutputMode.Full });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal($"GET {server.BaseUri}json", harness.OutputLines[0]);
@@ -692,7 +696,7 @@ public sealed class HttpFileRunnerTests
         using Harness harness = new();
         string path = await harness.WriteHttpFileAsync($"GET {server.BaseUri}json");
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, OutputMode.Body, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { ForcedMode = OutputMode.Body });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(EchoServer.JsonBody, Encoding.UTF8.GetString(harness.StandardOutput.ToArray()));
@@ -717,7 +721,11 @@ public sealed class HttpFileRunnerTests
             """);
 
         int exitCode = await harness.RunAsync(
-            new RunOptions(path, null, "dev", forced ? OutputMode.Body : null, Insecure: false));
+            new RunOptions(path)
+            {
+                EnvironmentName = "dev",
+                ForcedMode = forced ? OutputMode.Body : null,
+            });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         string body = Encoding.UTF8.GetString(harness.StandardOutput.ToArray());
@@ -741,7 +749,11 @@ public sealed class HttpFileRunnerTests
             GET {{{url}}}{{token}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, "dev", OutputMode.Headers, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path)
+        {
+            EnvironmentName = "dev",
+            ForcedMode = OutputMode.Headers,
+        });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal("HTTP/1.1 200 OK", harness.OutputLines[0]);
@@ -763,7 +775,7 @@ public sealed class HttpFileRunnerTests
         using Harness harness = new();
         string path = await harness.WriteHttpFileAsync($"GET {server.BaseUri}{route}");
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, OutputMode.Status, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { ForcedMode = OutputMode.Status });
 
         Assert.Equal(expectedExitCode, exitCode);
         Assert.Equal([statusLine], harness.OutputLines);
@@ -778,7 +790,7 @@ public sealed class HttpFileRunnerTests
         using Harness harness = new();
         string path = await harness.WriteHttpFileAsync($"GET {server.BaseUri}not-found");
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, OutputMode.Headers, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { ForcedMode = OutputMode.Headers });
 
         Assert.Equal(ExitCodes.ErrorStatus, exitCode);
         Assert.Equal("HTTP/1.1 404 Not Found", harness.OutputLines[0]);
@@ -803,7 +815,11 @@ public sealed class HttpFileRunnerTests
             """);
         OutputMode mode = headers ? OutputMode.Headers : OutputMode.Status;
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "getToDo", null, mode, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path)
+        {
+            RequestName = "getToDo",
+            ForcedMode = mode,
+        });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal("HTTP/1.1 200 OK", harness.OutputLines[0]);
@@ -823,7 +839,7 @@ public sealed class HttpFileRunnerTests
         using Harness harness = new();
         string path = await harness.WriteHttpFileAsync($"GET {server.BaseUri}json");
 
-        await harness.RunAsync(new RunOptions(path, null, null, null, insecure));
+        await harness.RunAsync(new RunOptions(path) { Insecure = insecure });
 
         Assert.Equal([insecure], harness.InsecureFlags);
     }
@@ -844,7 +860,7 @@ public sealed class HttpFileRunnerTests
             GET {{{server.BaseUri}}}echo?n={{first.response.body.$.num}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "second", null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "second" });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(2, server.Requests.Count);
@@ -864,7 +880,7 @@ public sealed class HttpFileRunnerTests
             GET {{{server.BaseUri}}}todos/{{$dotenv TODO_ID}}?again={{$dotenv TODO_ID}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(["GET /todos/17?again=17 HTTP/1.1"], server.Requests.Select(request => request.RequestLine));
@@ -881,7 +897,7 @@ public sealed class HttpFileRunnerTests
             GET {{{server.BaseUri}}}todos/{{$processEnv TODO_ID}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(["GET /todos/23 HTTP/1.1"], server.Requests.Select(request => request.RequestLine));
@@ -901,7 +917,7 @@ public sealed class HttpFileRunnerTests
             GET {{{server.BaseUri}}}echo?email={{email}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Matches(
@@ -927,7 +943,7 @@ public sealed class HttpFileRunnerTests
             GET {{{server.BaseUri}}}json
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "first", null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "first" });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(["GET /echo/first HTTP/1.1"], server.Requests.Select(request => request.RequestLine));
@@ -945,7 +961,7 @@ public sealed class HttpFileRunnerTests
         string path = await harness.WriteHttpFileAsync(
             $"GET {server.BaseUri}echo/my file/{Cafe}?q=a b&name={Jose}{httpVersion}");
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(
@@ -969,7 +985,7 @@ public sealed class HttpFileRunnerTests
             GET {{{server.BaseUri}}}echo/{{token}}?key={{token}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, "dev", null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal($"GET /echo/{SentForm}?key={SentForm} HTTP/1.1", Assert.Single(server.Requests).RequestLine);
@@ -1000,7 +1016,7 @@ public sealed class HttpFileRunnerTests
             X-Plain: plain
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, "dev", null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal([$"Bearer {Token}"], Assert.Single(server.Requests).HeaderValues(AuthorizationHeader));
@@ -1023,7 +1039,7 @@ public sealed class HttpFileRunnerTests
         using Harness harness = new() { IsOutputRedirected = true };
         string path = await harness.WriteHttpFileAsync($"GET {server.RedirectUrl(307, "/json")}");
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(EchoServer.JsonBody, Encoding.UTF8.GetString(harness.StandardOutput.ToArray()));
@@ -1040,7 +1056,7 @@ public sealed class HttpFileRunnerTests
             _ => throw new IOException("The connection was reset.")));
         string path = await harness.WriteProviderFilesAsync();
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, "dev", null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(["error: unexpected IOException: The connection was reset."], harness.ErrorLines);
@@ -1053,7 +1069,7 @@ public sealed class HttpFileRunnerTests
         string path = await harness.WriteHttpFileAsync("GET http://localhost/todos/{{$dotenv TODO_ID}}");
         string dotEnvPath = Path.Combine(harness.Directory.DirectoryPath, ".env");
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(
@@ -1068,7 +1084,7 @@ public sealed class HttpFileRunnerTests
         string dotEnvPath = await harness.WriteFileAsync(".env", "OTHER=1");
         string path = await harness.WriteHttpFileAsync("GET http://localhost/todos/{{$dotenv TODO_ID}}");
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal([$"error: 'TODO_ID' is not defined in {dotEnvPath}."], harness.ErrorLines);
@@ -1091,7 +1107,7 @@ public sealed class HttpFileRunnerTests
             { "id": "{{heroId}}" }
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.Success, exitCode);
         RecordedRequest received = Assert.Single(server.Requests);
@@ -1126,7 +1142,7 @@ public sealed class HttpFileRunnerTests
             X-Type: {{gql.request.headers.Content-Type}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "next", null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "next" });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         RecordedRequest received = server.Requests[^1];
@@ -1154,7 +1170,7 @@ public sealed class HttpFileRunnerTests
             X-Type: {{gql.request.headers.X-Request-Type}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "next", null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "next" });
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Single(server.Requests);
@@ -1185,7 +1201,11 @@ public sealed class HttpFileRunnerTests
             X-Sent: {{gql.request.body.*}}
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, "next", "dev", null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path)
+        {
+            RequestName = "next",
+            EnvironmentName = "dev",
+        });
 
         Assert.Equal(ExitCodes.Success, exitCode);
         Assert.Equal(
@@ -1209,7 +1229,7 @@ public sealed class HttpFileRunnerTests
             [1, 2]
             """);
 
-        int exitCode = await harness.RunAsync(new RunOptions(path, null, null, null, Insecure: false));
+        int exitCode = await harness.RunAsync(new RunOptions(path));
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Empty(server.Requests);
@@ -1294,11 +1314,13 @@ public sealed class HttpFileRunnerTests
 
         public List<ISecretProvider> Providers { get; } = [];
 
-        public Dictionary<string, string> EnvironmentVariables { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, string> EnvironmentVariables { get; } = [with(StringComparer.Ordinal)];
 
         public List<bool> InsecureFlags { get; } = [];
 
-        /// <summary>The token given to the run.</summary>
+        /// <summary>
+        /// The token given to the run.
+        /// </summary>
         public CancellationToken CancellationToken { get; init; } = TestContext.Current.CancellationToken;
 
         public bool IsInputRedirected { get; init; }
@@ -1320,7 +1342,9 @@ public sealed class HttpFileRunnerTests
         public Task<string> WriteFileAsync(string relativePath, string content) =>
             Directory.WriteFileAsync(relativePath, content, TestContext.Current.CancellationToken);
 
-        /// <summary>Writes a request whose only variable comes from the <c>EntraAccessToken</c> provider.</summary>
+        /// <summary>
+        /// Writes a request whose only variable comes from the <c>EntraAccessToken</c> provider.
+        /// </summary>
         public async Task<string> WriteProviderFilesAsync()
         {
             await WriteFileAsync(

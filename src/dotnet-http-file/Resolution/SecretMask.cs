@@ -19,7 +19,7 @@ internal sealed class SecretMask
     private const string UriQueryPrefix = "http://h/?";
 
     // Every text that is replaced: the secrets and the forms derived from them.
-    private readonly HashSet<string> _forms = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _forms = [with(StringComparer.Ordinal)];
 
     /// <summary>
     /// Registers <paramref name="secret"/> together with the forms it takes when it is written into a URL, a
@@ -41,7 +41,9 @@ internal sealed class SecretMask
         }
     }
 
-    /// <summary>Replaces every registered secret in <paramref name="text"/> with <see cref="Placeholder"/>.</summary>
+    /// <summary>
+    /// Replaces every registered secret in <paramref name="text"/> with <see cref="Placeholder"/>.
+    /// </summary>
     public string Apply(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -125,8 +127,6 @@ internal sealed class SecretMask
         AddEscapedForm(value, XmlAttributeForm);
     }
 
-    // A value that JSON or XML cannot hold, such as a lone surrogate or most control characters, has no such
-    // form, so only its raw form is registered.
     private void AddEscapedForm(string value, Func<string, string> escape)
     {
         try
@@ -135,6 +135,8 @@ internal sealed class SecretMask
         }
         catch (ArgumentException)
         {
+            // JSON and XML cannot hold some values, such as a lone surrogate or most control characters, so those
+            // have no escaped form and only their raw form is registered.
         }
     }
 

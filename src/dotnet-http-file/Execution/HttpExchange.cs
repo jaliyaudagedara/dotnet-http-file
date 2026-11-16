@@ -1,27 +1,32 @@
 namespace DotNetHttpFile.Execution;
 
-/// <summary>A request with every variable and reference substituted, as it is sent.</summary>
+/// <summary>
+/// A request with every variable and reference substituted, as it is sent.
+/// </summary>
 /// <param name="Method">The HTTP method.</param>
 /// <param name="Url">
 /// The URL to send to. For sending only: never print it or any text derived from it. <see cref="Uri"/> rewrites
 /// the text (escaping, host case), so a provider-resolved value in it no longer matches what the secret mask
 /// knows. Print <see cref="DisplayUrl"/> instead.
 /// </param>
-/// <param name="HttpVersion">The version written on the request line, or null.</param>
 /// <param name="Headers">The headers in file order.</param>
-/// <param name="Body">The body, or null when the request has none.</param>
-internal sealed record ResolvedRequest(
-    string Method,
-    Uri Url,
-    string? HttpVersion,
-    IReadOnlyList<KeyValuePair<string, string>> Headers,
-    string? Body)
+internal sealed record ResolvedRequest(string Method, Uri Url, IReadOnlyList<KeyValuePair<string, string>> Headers)
 {
     /// <summary>
     /// The only URL to print. For a request from the file, the URL as resolved with provider-resolved values
     /// masked. For a redirect, the location the server sent, masked only when it takes parts of the request URL.
     /// </summary>
     public required string DisplayUrl { get; init; }
+
+    /// <summary>
+    /// The version written on the request line, or null.
+    /// </summary>
+    public string? HttpVersion { get; init; }
+
+    /// <summary>
+    /// The body, or null when the request has none.
+    /// </summary>
+    public string? Body { get; init; }
 
     /// <summary>
     /// The file line of each header, parallel to <see cref="ResolvedRequest.Headers"/>. Needed only to build the
@@ -45,19 +50,19 @@ internal sealed record ReceivedResponse(
     ReadOnlyMemory<byte> Body,
     TimeSpan Elapsed)
 {
-    private const string ContentTypeHeader = "Content-Type";
-    private const string ContentEncodingHeader = "Content-Encoding";
     private const string IdentityCoding = "identity";
     private const char CodingSeparator = ',';
 
-    /// <summary>The first <c>Content-Type</c> header value, or null when the response has none.</summary>
+    /// <summary>
+    /// The first <c>Content-Type</c> header value, or null when the response has none.
+    /// </summary>
     public string? ContentType
     {
         get
         {
             foreach (KeyValuePair<string, string> header in Headers)
             {
-                if (string.Equals(header.Key, ContentTypeHeader, StringComparison.OrdinalIgnoreCase))
+                if (HeaderNames.Is(header, HeaderNames.ContentType))
                 {
                     return header.Value;
                 }
@@ -74,14 +79,16 @@ internal sealed record ReceivedResponse(
     public IReadOnlyList<string> ContentCodings =>
     [
         .. Headers
-            .Where(header => string.Equals(header.Key, ContentEncodingHeader, StringComparison.OrdinalIgnoreCase))
+            .Where(header => HeaderNames.Is(header, HeaderNames.ContentEncoding))
             .SelectMany(header => header.Value.Split(
                 CodingSeparator,
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             .Where(coding => !string.Equals(coding, IdentityCoding, StringComparison.OrdinalIgnoreCase)),
     ];
 
-    /// <summary>The codings of <see cref="ContentCodings"/> that the tool does not decode, each named once.</summary>
+    /// <summary>
+    /// The codings of <see cref="ContentCodings"/> that the tool does not decode, each named once.
+    /// </summary>
     public IReadOnlyList<string> UnsupportedCodings =>
     [
         .. ContentCodings
@@ -98,5 +105,7 @@ internal sealed record ReceivedResponse(
     public bool IsSuccess => StatusCode is >= 200 and <= 299;
 }
 
-/// <summary>A sent request and the response it received.</summary>
+/// <summary>
+/// A sent request and the response it received.
+/// </summary>
 internal sealed record HttpExchange(ResolvedRequest Request, ReceivedResponse Response);

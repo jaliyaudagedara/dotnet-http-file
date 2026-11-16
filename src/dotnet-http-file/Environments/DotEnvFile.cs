@@ -1,11 +1,10 @@
 namespace DotNetHttpFile.Environments;
 
-/// <summary>What a <c>.env</c> file holds.</summary>
+/// <summary>
+/// What a <c>.env</c> file holds.
+/// </summary>
 /// <param name="Path">The path the file was looked for at.</param>
-/// <param name="Values">
-/// The <c>KEY=VALUE</c> pairs, with the last value kept for a repeated key. Null when the file does not exist.
-/// </param>
-internal sealed record DotEnvFile(string Path, IReadOnlyDictionary<string, string>? Values)
+internal sealed record DotEnvFile(string Path)
 {
     private const char Comment = '#';
     private const char Assignment = '=';
@@ -14,7 +13,14 @@ internal sealed record DotEnvFile(string Path, IReadOnlyDictionary<string, strin
 
     private static readonly char[] s_lineTerminators = ['\r', '\n'];
 
-    /// <summary>Reads the <c>.env</c> file at <paramref name="path"/>.</summary>
+    /// <summary>
+    /// The <c>KEY=VALUE</c> pairs, with the last value kept for a repeated key. Null when the file does not exist.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? Values { get; init; }
+
+    /// <summary>
+    /// Reads the <c>.env</c> file at <paramref name="path"/>.
+    /// </summary>
     public static async Task<DotEnvFile> LoadAsync(
         string path,
         CancellationToken cancellationToken = default)
@@ -28,15 +34,15 @@ internal sealed record DotEnvFile(string Path, IReadOnlyDictionary<string, strin
         }
         catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
-            return new DotEnvFile(path, Values: null);
+            return new DotEnvFile(path);
         }
 
-        return new DotEnvFile(path, Parse(content));
+        return new DotEnvFile(path) { Values = Parse(content) };
     }
 
     private static Dictionary<string, string> Parse(string content)
     {
-        Dictionary<string, string> values = new(StringComparer.Ordinal);
+        Dictionary<string, string> values = [with(StringComparer.Ordinal)];
         StringSplitOptions options = StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries;
 
         foreach (string line in content.Split(s_lineTerminators, options))

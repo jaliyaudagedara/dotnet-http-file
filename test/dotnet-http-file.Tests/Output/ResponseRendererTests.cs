@@ -368,9 +368,10 @@ public sealed class ResponseRendererTests
     public async Task RenderFull_RequestWithBody_DoesNotPrintRequestBody()
     {
         using Harness harness = new(OutputMode.Full);
-        ResolvedRequest request = new("POST", new Uri(ToDosUrl), HttpVersion: null, [], "request-body-text")
+        ResolvedRequest request = new("POST", new Uri(ToDosUrl), [])
         {
             DisplayUrl = ToDosUrl,
+            Body = "request-body-text",
         };
 
         await harness.Renderer.RenderAsync(
@@ -822,7 +823,7 @@ public sealed class ResponseRendererTests
         string method = "GET",
         string displayUrl = ToDosUrl,
         IReadOnlyList<KeyValuePair<string, string>>? headers = null) =>
-        new(method, new Uri(ToDosUrl), HttpVersion: null, headers ?? [], Body: null)
+        new(method, new Uri(ToDosUrl), headers ?? [])
         {
             DisplayUrl = displayUrl,
         };
@@ -837,7 +838,7 @@ public sealed class ResponseRendererTests
             TimeSpan.FromMilliseconds(elapsedMilliseconds));
 
     private static RequestDefinition Definition(string name) =>
-        new(name, "POST", Template.Parse("https://localhost:7128/login"), HttpVersion: null, [], Body: null, Line: 1);
+        new("POST", Template.Parse("https://localhost:7128/login"), [], Line: 1) { Name = name };
 
     private sealed class Harness : IDisposable
     {

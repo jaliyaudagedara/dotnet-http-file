@@ -43,7 +43,7 @@ public sealed class DotEnvFileTests : IDisposable
 
         DotEnvFile dotEnv = await DotEnvFile.LoadAsync(path, TestContext.Current.CancellationToken);
 
-        Assert.Equal(new DotEnvFile(path, Values: null), dotEnv);
+        Assert.Equal(new DotEnvFile(path), dotEnv);
     }
 
     [Fact]

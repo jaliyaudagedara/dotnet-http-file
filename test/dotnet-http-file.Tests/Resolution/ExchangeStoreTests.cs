@@ -43,7 +43,7 @@ public sealed class ExchangeStoreTests
 
     private static HttpExchange CreateExchange() =>
         new(
-            new ResolvedRequest("GET", new Uri("http://localhost:5199/json"), HttpVersion: null, [], Body: null)
+            new ResolvedRequest("GET", new Uri("http://localhost:5199/json"), [])
             {
                 DisplayUrl = "http://localhost:5199/json",
             },

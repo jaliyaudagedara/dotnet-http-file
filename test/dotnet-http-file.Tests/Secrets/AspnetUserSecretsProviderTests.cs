@@ -254,6 +254,29 @@ public sealed class AspnetUserSecretsProviderTests : IDisposable
             exception.Message);
     }
 
+    [Fact]
+    public async Task ResolveAsync_UserSecretsFileNotUtf8_ThrowsWithoutValues()
+    {
+        const byte Windows1252EAcute = 0xE9;
+        await WriteProjectFileAsync(ProjectFile);
+        Directory.CreateDirectory(Path.Combine(RootDirectory, UserSecretsId));
+        await File.WriteAllBytesAsync(
+            SecretsFilePath,
+            [
+                .. Encoding.ASCII.GetBytes("""{ "config": { "ApiKeyDev": "caf"""),
+                Windows1252EAcute,
+                .. Encoding.ASCII.GetBytes("\" } }"),
+            ],
+            TestContext.Current.CancellationToken);
+
+        HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(() => ResolveAsync(Definition));
+
+        Assert.Equal(
+            $"Variable 'ApiKeyDev' (AspnetUserSecrets): user secrets file {SecretsFilePath} is not a valid JSON "
+                + "object.",
+            exception.Message);
+    }
+
     [Theory]
     [InlineData("""{ "provider": "AspnetUserSecrets" }""")]
     [InlineData("""{ "provider": "AspnetUserSecrets", "secretName": "" }""")]

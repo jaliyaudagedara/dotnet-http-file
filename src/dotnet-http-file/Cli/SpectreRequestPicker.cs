@@ -4,7 +4,9 @@ using Spectre.Console;
 
 namespace DotNetHttpFile.Cli;
 
-/// <summary>An arrow-key list of the requests in a file. Escape leaves it without a choice.</summary>
+/// <summary>
+/// An arrow-key list of the requests in a file. Escape leaves it without a choice.
+/// </summary>
 internal sealed class SpectreRequestPicker(IAnsiConsole console) : IRequestPicker
 {
     private const string UnnamedRequest = "-";
@@ -28,7 +30,9 @@ internal sealed class SpectreRequestPicker(IAnsiConsole console) : IRequestPicke
         return selected == NoSelection ? null : requests[selected];
     }
 
-    /// <summary>The line shown for <paramref name="request"/>: its name, its method and its URL as written.</summary>
+    /// <summary>
+    /// The line shown for <paramref name="request"/>: its name, its method and its URL as written.
+    /// </summary>
     public static string Label(RequestDefinition request)
     {
         ArgumentNullException.ThrowIfNull(request);

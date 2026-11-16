@@ -1,5 +1,5 @@
 using System.Buffers;
-using System.Globalization;
+using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -11,11 +11,10 @@ namespace DotNetHttpFile.Execution;
 /// </summary>
 internal static partial class GraphQLRequest
 {
-    public const string ContentType = "application/json";
+    public const string ContentType = MediaTypeNames.Application.Json;
 
     private const string MarkerHeader = "X-Request-Type";
     private const string MarkerValue = "graphql";
-    private const string ContentTypeHeader = "Content-Type";
     private const string QueryProperty = "query";
     private const string VariablesProperty = "variables";
     private const string OperationNameProperty = "operationName";
@@ -57,13 +56,13 @@ internal static partial class GraphQLRequest
         (string query, string variables) = Split(request.Body ?? string.Empty);
         if (query.Length == 0)
         {
-            throw new HttpFileException(Format(s_queryMissingFormat, line));
+            throw new HttpFileException(Messages.Format(s_queryMissingFormat, line));
         }
 
         using JsonDocument? variablesDocument = ParseVariables(variables, line);
 
-        List<KeyValuePair<string, string>> headers = new(request.Headers.Count);
-        List<int> headerLines = new(request.Headers.Count);
+        List<KeyValuePair<string, string>> headers = [with(capacity: request.Headers.Count)];
+        List<int> headerLines = [with(capacity: request.Headers.Count)];
         int? markerLine = null;
         for (int index = 0; index < request.Headers.Count; index++)
         {
@@ -77,9 +76,9 @@ internal static partial class GraphQLRequest
             headerLines.Add(request.HeaderLines[index]);
         }
 
-        if (!headers.Any(header => string.Equals(header.Key, ContentTypeHeader, StringComparison.OrdinalIgnoreCase)))
+        if (!headers.Any(header => HeaderNames.Is(header, HeaderNames.ContentType)))
         {
-            headers.Add(KeyValuePair.Create(ContentTypeHeader, ContentType));
+            headers.Add(KeyValuePair.Create(HeaderNames.ContentType, ContentType));
             headerLines.Add(markerLine ?? line);
         }
 
@@ -91,11 +90,8 @@ internal static partial class GraphQLRequest
         };
     }
 
-    private static string Format(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
-        string.Format(CultureInfo.CurrentCulture, format, arguments);
-
     private static bool IsMarker(KeyValuePair<string, string> header) =>
-        string.Equals(header.Key, MarkerHeader, StringComparison.OrdinalIgnoreCase)
+        HeaderNames.Is(header, MarkerHeader)
         && string.Equals(header.Value.Trim(), MarkerValue, StringComparison.OrdinalIgnoreCase);
 
     private static (string Query, string Variables) Split(string body)
@@ -121,13 +117,13 @@ internal static partial class GraphQLRequest
         }
         catch (JsonException)
         {
-            throw new HttpFileException(Format(s_variablesNotObjectFormat, line));
+            throw new HttpFileException(Messages.Format(s_variablesNotObjectFormat, line));
         }
 
         if (document.RootElement.ValueKind != JsonValueKind.Object)
         {
             document.Dispose();
-            throw new HttpFileException(Format(s_variablesNotObjectFormat, line));
+            throw new HttpFileException(Messages.Format(s_variablesNotObjectFormat, line));
         }
 
         return document;

@@ -21,7 +21,9 @@ internal sealed class EnvironmentSet
         _values = values;
     }
 
-    /// <summary>The set used when no environment file was found.</summary>
+    /// <summary>
+    /// The set used when no environment file was found.
+    /// </summary>
     public static EnvironmentSet None { get; } = new(
         environmentFilePath: null,
         selectedName: null,
@@ -30,7 +32,9 @@ internal sealed class EnvironmentSet
 
     public string? EnvironmentFilePath { get; }
 
-    /// <summary>The selected environment, or null when only <c>$shared</c> applies.</summary>
+    /// <summary>
+    /// The selected environment, or null when only <c>$shared</c> applies.
+    /// </summary>
     public string? SelectedName { get; }
 
     /// <summary>
@@ -39,7 +43,9 @@ internal sealed class EnvironmentSet
     /// </summary>
     public IReadOnlyList<string> AvailableNames { get; }
 
-    /// <summary>Gets the value of the variable <paramref name="name"/>, matched by case.</summary>
+    /// <summary>
+    /// Gets the value of the variable <paramref name="name"/>, matched by case.
+    /// </summary>
     public bool TryGetValue(string name, [NotNullWhen(true)] out EnvironmentValue? value) =>
         _values.TryGetValue(name, out value);
 }

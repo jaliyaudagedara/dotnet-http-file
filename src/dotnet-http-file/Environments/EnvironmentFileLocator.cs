@@ -8,7 +8,9 @@ internal static class EnvironmentFileLocator
     /// Finds the environment file nearest to the <c>.http</c> file at <paramref name="httpFilePath"/>,
     /// searching its folder and then each parent folder.
     /// </summary>
-    /// <returns>The full path of the environment file, or null when there is none.</returns>
+    /// <returns>
+    /// The full path of the environment file, or null when there is none.
+    /// </returns>
     public static string? Find(string httpFilePath)
     {
         ArgumentNullException.ThrowIfNull(httpFilePath);

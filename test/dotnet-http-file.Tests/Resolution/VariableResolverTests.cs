@@ -197,9 +197,10 @@ public sealed class VariableResolverTests
         await ResolveUrlAsync(resolver, file.Requests[0]);
 
         SecretRequest request = Assert.Single(provider.Requests);
+        string providerField = request.GetRequiredString(ProviderName, "provider");
         Assert.Equal(
             ("ApiToken", ProviderName, s_environmentFileDirectory),
-            (request.VariableName, request.GetRequiredString(ProviderName, "provider"), request.EnvironmentFileDirectory));
+            (request.VariableName, providerField, request.EnvironmentFileDirectory));
     }
 
     [Fact]
@@ -491,7 +492,10 @@ public sealed class VariableResolverTests
     public async Task ResolveRequestAsync_InvalidUrlHoldingSecret_MasksSecretInMessage()
     {
         HttpFile file = Parse("GET {{ApiToken}}/items?key={{ApiToken}}");
-        VariableResolver resolver = CreateResolver(file, ProviderEnvironment("ApiToken"), new FakeSecretProvider(Secret));
+        VariableResolver resolver = CreateResolver(
+            file,
+            ProviderEnvironment("ApiToken"),
+            new FakeSecretProvider(Secret));
 
         HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
             () => resolver.ResolveRequestAsync(file.Requests[0], TestContext.Current.CancellationToken));
@@ -525,7 +529,10 @@ public sealed class VariableResolverTests
             "POST https://localhost/items?key={{ApiToken}}",
             "",
             "{{ApiToken}}");
-        VariableResolver resolver = CreateResolver(file, ProviderEnvironment("ApiToken"), new FakeSecretProvider(Secret));
+        VariableResolver resolver = CreateResolver(
+            file,
+            ProviderEnvironment("ApiToken"),
+            new FakeSecretProvider(Secret));
 
         ResolvedRequest resolved = await resolver.ResolveRequestAsync(
             file.Requests[0],
@@ -655,7 +662,7 @@ public sealed class VariableResolverTests
             TimeProvider.System,
             new Random(Seed),
             _ => null,
-            _ => Task.FromResult(new DotEnvFile(".env", new Dictionary<string, string>())));
+            _ => Task.FromResult(new DotEnvFile(".env") { Values = new Dictionary<string, string>() }));
 
         return new VariableResolver(
             file,

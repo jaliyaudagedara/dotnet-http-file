@@ -5,14 +5,28 @@ namespace DotNetHttpFile.Parsing;
 internal sealed record HeaderDefinition(string Name, Template Value, int Line);
 
 internal sealed record RequestDefinition(
-    string? Name,
     string Method,
     Template Url,
-    string? HttpVersion,
     IReadOnlyList<HeaderDefinition> Headers,
-    Template? Body,
     int Line)
 {
-    /// <summary>The line the body starts on, or null when the request has no body.</summary>
+    /// <summary>
+    /// The name given with <c>@name</c>, or null when the request has none.
+    /// </summary>
+    public string? Name { get; init; }
+
+    /// <summary>
+    /// The version written on the request line, or null.
+    /// </summary>
+    public string? HttpVersion { get; init; }
+
+    /// <summary>
+    /// The body, or null when the request has none.
+    /// </summary>
+    public Template? Body { get; init; }
+
+    /// <summary>
+    /// The line the body starts on, or null when the request has no body.
+    /// </summary>
     public int? BodyLine { get; init; }
 }

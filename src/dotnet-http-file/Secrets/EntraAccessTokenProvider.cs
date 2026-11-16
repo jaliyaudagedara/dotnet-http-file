@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Azure.Core;
@@ -33,19 +32,13 @@ internal sealed partial class EntraAccessTokenProvider(Lazy<TokenCredential> cre
         string scope = request.GetRequiredString(ProviderName, ScopeField);
         if (!ScopePattern.IsMatch(scope))
         {
-            throw new HttpFileException(string.Format(
-                CultureInfo.CurrentCulture,
-                s_entraAccessTokenInvalidScopeFormat,
-                request.VariableName));
+            throw new HttpFileException(Messages.Format(s_entraAccessTokenInvalidScopeFormat, request.VariableName));
         }
 
         string? tenantId = request.GetOptionalString(ProviderName, TenantIdField);
         if (tenantId is not null && !TenantIdPattern.IsMatch(tenantId))
         {
-            throw new HttpFileException(string.Format(
-                CultureInfo.CurrentCulture,
-                s_entraAccessTokenInvalidTenantIdFormat,
-                request.VariableName));
+            throw new HttpFileException(Messages.Format(s_entraAccessTokenInvalidTenantIdFormat, request.VariableName));
         }
 
         TokenRequestContext requestContext = new([scope], tenantId: tenantId);
@@ -62,8 +55,7 @@ internal sealed partial class EntraAccessTokenProvider(Lazy<TokenCredential> cre
         {
             // CredentialUnavailableException derives from AuthenticationFailedException, so this covers both.
             throw new HttpFileException(
-                string.Format(
-                    CultureInfo.CurrentCulture,
+                Messages.Format(
                     s_entraAccessTokenFailedFormat,
                     request.VariableName,
                     scope,

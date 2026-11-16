@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -6,8 +5,9 @@ namespace DotNetHttpFile.Templates;
 
 internal sealed partial record Template
 {
-    private const string ExpressionStart = "{{";
-    private const string ExpressionEnd = "}}";
+    public const string ExpressionStart = "{{";
+    public const string ExpressionEnd = "}}";
+
     private const char DynamicPrefix = '$';
     private const char EscapeCharacter = '\\';
     private const char Quote = '"';
@@ -29,7 +29,9 @@ internal sealed partial record Template
 
     public static Template Empty { get; } = new(string.Empty, [], []);
 
-    /// <summary>The text as written, escapes included.</summary>
+    /// <summary>
+    /// The text as written, escapes included.
+    /// </summary>
     public string Raw { get; }
 
     public IReadOnlyList<TemplateSegment> Segments { get; }
@@ -140,7 +142,9 @@ internal sealed partial record Template
         return new Template(text, segments, offsets);
     }
 
-    /// <summary>Gets whether the <c>{{</c> at <paramref name="start"/> in <paramref name="text"/> is escaped.</summary>
+    /// <summary>
+    /// Gets whether the <c>{{</c> at <paramref name="start"/> in <paramref name="text"/> is escaped.
+    /// </summary>
     public static bool IsEscaped(string text, int start)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -245,7 +249,7 @@ internal sealed partial record Template
     }
 
     private static HttpFileException InvalidExpression(string expression, int offset) =>
-        new(string.Format(CultureInfo.CurrentCulture, s_invalidExpressionFormat, expression))
+        new(Messages.Format(s_invalidExpressionFormat, expression))
         {
             ExpressionOffset = offset,
         };

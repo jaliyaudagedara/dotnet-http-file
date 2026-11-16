@@ -17,9 +17,6 @@ namespace DotNetHttpFile.Output;
 /// </summary>
 internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secretMask, OutputMode mode)
 {
-    private const string AuthorizationHeader = "Authorization";
-    private const string ProxyAuthorizationHeader = "Proxy-Authorization";
-    private const string CookieHeader = "Cookie";
     private const int VersionFieldCount = 2;
     private const string ControlCharacterPrefix = @"\x";
     private const string ControlCharacterFormat = "X2";
@@ -110,26 +107,30 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         WriteLines(console.Error, message, s_dependencyStyle);
     }
 
-    /// <summary>Writes <paramref name="message"/> to standard error as a warning.</summary>
+    /// <summary>
+    /// Writes <paramref name="message"/> to standard error as a warning.
+    /// </summary>
     public void RenderWarning(string message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        WriteMaskedLines(console.Error, Format(s_outputWarningFormat, message), s_warningStyle);
+        WriteMaskedLines(console.Error, Messages.Format(s_outputWarningFormat, message), s_warningStyle);
     }
 
-    /// <summary>Writes <paramref name="message"/> to standard error as an error.</summary>
+    /// <summary>
+    /// Writes <paramref name="message"/> to standard error as an error.
+    /// </summary>
     public void RenderError(string message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        WriteMaskedLines(console.Error, Format(s_outputErrorFormat, message), s_failureStyle);
+        WriteMaskedLines(console.Error, Messages.Format(s_outputErrorFormat, message), s_failureStyle);
     }
 
     /// <summary>
     /// Replaces every C0 and C1 control character and DEL with its code as text, so that what a server sent
-    /// or a file holds cannot move the cursor, clear the screen or set the window title. A tab and a line break are kept; a
-    /// carriage return that no line feed follows is replaced, because it would overwrite the line.
+    /// or a file holds cannot move the cursor, clear the screen or set the window title. A tab and a line break
+    /// are kept; a carriage return that no line feed follows is replaced, because it would overwrite the line.
     /// </summary>
     internal static string WithVisibleControlCharacters(string text)
     {
@@ -157,6 +158,14 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         return builder?.ToString() ?? text;
     }
 
+    /// <summary>
+    /// The status code of <paramref name="response"/>, followed by its reason phrase when it has one.
+    /// </summary>
+    internal static string StatusText(ReceivedResponse response) =>
+        response.ReasonPhrase.Length == 0
+            ? response.StatusCode.ToString(CultureInfo.InvariantCulture)
+            : string.Create(CultureInfo.InvariantCulture, $"{response.StatusCode} {response.ReasonPhrase}");
+
     private static string BodyDisplayText(ReceivedResponse response)
     {
         string? contentType = response.ContentType;
@@ -170,8 +179,8 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         string size = FormatSize(response.Body.Length);
 
         return string.IsNullOrWhiteSpace(contentType)
-            ? Format(s_binaryBodySummaryNoContentTypeFormat, size)
-            : Format(s_binaryBodySummaryFormat, size, contentType);
+            ? Messages.Format(s_binaryBodySummaryNoContentTypeFormat, size)
+            : Messages.Format(s_binaryBodySummaryFormat, size, contentType);
     }
 
     private static string WithoutFinalLineBreak(string text)
@@ -187,12 +196,13 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     private static string RequestHeaderDisplayValue(KeyValuePair<string, string> header)
     {
         // A cookie has no scheme, and the first cookie pair must never be shown as one.
-        if (IsHeader(header, CookieHeader))
+        if (HeaderNames.Is(header, HeaderNames.Cookie))
         {
             return SecretMask.Placeholder;
         }
 
-        if (!IsHeader(header, AuthorizationHeader) && !IsHeader(header, ProxyAuthorizationHeader))
+        if (!HeaderNames.Is(header, HeaderNames.Authorization)
+            && !HeaderNames.Is(header, HeaderNames.ProxyAuthorization))
         {
             return header.Value;
         }
@@ -207,9 +217,6 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         return $"{value[..schemeLength]} {SecretMask.Placeholder}";
     }
 
-    private static bool IsHeader(KeyValuePair<string, string> header, string name) =>
-        string.Equals(header.Key, name, StringComparison.OrdinalIgnoreCase);
-
     private static string StatusLine(ReceivedResponse response)
     {
         string size = FormatSize(response.Body.Length);
@@ -221,11 +228,6 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
 
     private static string ProtocolStatusText(ReceivedResponse response) =>
         $"HTTP/{response.HttpVersion.ToString(VersionFieldCount)} {StatusText(response)}";
-
-    private static string StatusText(ReceivedResponse response) =>
-        response.ReasonPhrase.Length == 0
-            ? response.StatusCode.ToString(CultureInfo.InvariantCulture)
-            : string.Create(CultureInfo.InvariantCulture, $"{response.StatusCode} {response.ReasonPhrase}");
 
     private static long Milliseconds(ReceivedResponse response) =>
         (long)Math.Round(response.Elapsed.TotalMilliseconds, MidpointRounding.AwayFromZero);
@@ -247,9 +249,6 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
                 $"{(double)byteCount / BytesPerKilobyte:F1} KB"),
             _ => string.Create(CultureInfo.InvariantCulture, $"{(double)byteCount / BytesPerMegabyte:F1} MB"),
         };
-
-    private static string Format(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
-        string.Format(CultureInfo.CurrentCulture, format, arguments);
 
     private static void WriteLines(IAnsiConsole target, string text, Style? style = null) =>
         target.Write(new UnwrappedLines(WithVisibleControlCharacters(text), style));

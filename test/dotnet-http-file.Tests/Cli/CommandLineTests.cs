@@ -18,7 +18,7 @@ public sealed class CommandLineTests
         int exitCode = await harness.InvokeAsync(path);
 
         Assert.Equal(ExitCodes.Success, exitCode);
-        Assert.Equal(new RunOptions(path, null, null, null, Insecure: false), Assert.Single(harness.Runs));
+        Assert.Equal(new RunOptions(path), Assert.Single(harness.Runs));
         Assert.Empty(harness.Error.Output);
     }
 
@@ -30,7 +30,13 @@ public sealed class CommandLineTests
 
         await harness.InvokeAsync(path, "--name", "todos", "--env", "dev", "--verbose", "--insecure");
 
-        RunOptions expected = new(path, "todos", "dev", OutputMode.Full, Insecure: true);
+        RunOptions expected = new(path)
+        {
+            RequestName = "todos",
+            EnvironmentName = "dev",
+            ForcedMode = OutputMode.Full,
+            Insecure = true,
+        };
         Assert.Equal(expected, Assert.Single(harness.Runs));
     }
 
@@ -42,7 +48,13 @@ public sealed class CommandLineTests
 
         await harness.InvokeAsync("-n", "todos", "-e", "dev", "--show", "body", "-k", path);
 
-        RunOptions expected = new(path, "todos", "dev", OutputMode.Body, Insecure: true);
+        RunOptions expected = new(path)
+        {
+            RequestName = "todos",
+            EnvironmentName = "dev",
+            ForcedMode = OutputMode.Body,
+            Insecure = true,
+        };
         Assert.Equal(expected, Assert.Single(harness.Runs));
     }
 
@@ -176,11 +188,16 @@ public sealed class CommandLineTests
     {
         using Harness harness = new();
         string path = await harness.WriteFileAsync(HttpFileName);
+        RunOptions expected = new(path)
+        {
+            RequestName = "@x",
+            EnvironmentName = "@dev",
+        };
 
         int exitCode = await harness.InvokeAsync(path, "--name", "@x", "--env", "@dev");
 
         Assert.Equal(ExitCodes.Success, exitCode);
-        Assert.Equal(new RunOptions(path, "@x", "@dev", null, Insecure: false), Assert.Single(harness.Runs));
+        Assert.Equal(expected, Assert.Single(harness.Runs));
         Assert.Empty(harness.Error.Output);
     }
 
@@ -421,10 +438,14 @@ public sealed class CommandLineTests
 
         public List<RunOptions> Runs { get; } = [];
 
-        /// <summary>What a run does with the token it is given. By default it returns success at once.</summary>
+        /// <summary>
+        /// What a run does with the token it is given. By default it returns success at once.
+        /// </summary>
         public Func<CancellationToken, Task<int>> Run { get; init; } = _ => Task.FromResult(ExitCodes.Success);
 
-        /// <summary>The token given to the command line.</summary>
+        /// <summary>
+        /// The token given to the command line.
+        /// </summary>
         public CancellationToken CancellationToken { get; init; } = TestContext.Current.CancellationToken;
 
         public string[] ErrorLines

@@ -85,7 +85,7 @@ public sealed class SpectreRequestPickerTests
     }
 
     private static RequestDefinition Request(string? name, string method, string url) =>
-        new(name, method, Template.Parse(url), HttpVersion: null, Headers: [], Body: null, Line: 1);
+        new(method, Template.Parse(url), Headers: [], Line: 1) { Name = name };
 
     private static TestConsole InteractiveConsole(params ConsoleKey[] keys)
     {

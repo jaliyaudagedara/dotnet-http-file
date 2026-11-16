@@ -10,13 +10,10 @@ namespace DotNetHttpFile.Execution;
 /// </summary>
 internal static class RedirectPolicy
 {
-    /// <summary>The default of <see cref="SocketsHttpHandler.MaxAutomaticRedirections"/>.</summary>
+    /// <summary>
+    /// The default of <see cref="SocketsHttpHandler.MaxAutomaticRedirections"/>.
+    /// </summary>
     public const int MaxRedirects = 50;
-
-    private const string AuthorizationHeader = "Authorization";
-    private const string ProxyAuthorizationHeader = "Proxy-Authorization";
-    private const string CookieHeader = "Cookie";
-    private const string TransferEncodingHeader = "Transfer-Encoding";
 
     /// <summary>
     /// Creates the request that follows <paramref name="response"/>, or returns null when the response is
@@ -50,7 +47,7 @@ internal static class RedirectPolicy
         {
             KeyValuePair<string, string> header = request.Headers[index];
             bool isDropped = (!isSameOrigin && CanHoldCredential(header, secretMask))
-                || (isChangedToGet && IsHeader(header, TransferEncodingHeader));
+                || (isChangedToGet && HeaderNames.Is(header, HeaderNames.TransferEncoding));
 
             if (!isDropped)
             {
@@ -123,11 +120,8 @@ internal static class RedirectPolicy
         string.Equals(method, expected.Method, StringComparison.OrdinalIgnoreCase);
 
     private static bool CanHoldCredential(KeyValuePair<string, string> header, SecretMask secretMask) =>
-        IsHeader(header, AuthorizationHeader)
-        || IsHeader(header, ProxyAuthorizationHeader)
-        || IsHeader(header, CookieHeader)
+        HeaderNames.Is(header, HeaderNames.Authorization)
+        || HeaderNames.Is(header, HeaderNames.ProxyAuthorization)
+        || HeaderNames.Is(header, HeaderNames.Cookie)
         || !string.Equals(secretMask.Apply(header.Value), header.Value, StringComparison.Ordinal);
-
-    private static bool IsHeader(KeyValuePair<string, string> header, string name) =>
-        string.Equals(header.Key, name, StringComparison.OrdinalIgnoreCase);
 }

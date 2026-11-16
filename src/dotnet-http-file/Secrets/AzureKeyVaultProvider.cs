@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -85,8 +84,7 @@ internal sealed partial class AzureKeyVaultProvider(
         {
             // CredentialUnavailableException derives from AuthenticationFailedException, so this covers both.
             throw new HttpFileException(
-                string.Format(
-                    CultureInfo.CurrentCulture,
+                Messages.Format(
                     s_keyVaultSignInFailedFormat,
                     request.VariableName,
                     vaultName,
@@ -114,8 +112,7 @@ internal sealed partial class AzureKeyVaultProvider(
         string vaultName = resourceId[(resourceId.LastIndexOf(ResourceIdSeparator) + 1)..];
         if (!VaultNamePattern.IsMatch(vaultName))
         {
-            throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_keyVaultInvalidResourceIdFormat, variableName));
+            throw new HttpFileException(Messages.Format(s_keyVaultInvalidResourceIdFormat, variableName));
         }
 
         return vaultName;
@@ -132,6 +129,6 @@ internal sealed partial class AzureKeyVaultProvider(
             _ => s_keyVaultRequestFailedFormat,
         };
 
-        return string.Format(CultureInfo.CurrentCulture, format, variableName, vaultName, secretName, status);
+        return Messages.Format(format, variableName, vaultName, secretName, status);
     }
 }

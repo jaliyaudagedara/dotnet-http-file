@@ -184,9 +184,7 @@ public sealed class RequestSenderTests
         ResolvedRequest request = new(
             "GET",
             new Uri($"http://127.0.0.1:{port}/echo?key={Secret}"),
-            HttpVersion: null,
-            [],
-            Body: null)
+            [])
         {
             DisplayUrl = $"http://127.0.0.1:{port}/echo?key=***",
         };

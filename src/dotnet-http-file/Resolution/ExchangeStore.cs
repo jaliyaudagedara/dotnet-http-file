@@ -3,12 +3,16 @@ using DotNetHttpFile.Execution;
 
 namespace DotNetHttpFile.Resolution;
 
-/// <summary>The exchanges of the named requests sent so far in a run, keyed by request name.</summary>
+/// <summary>
+/// The exchanges of the named requests sent so far in a run, keyed by request name.
+/// </summary>
 internal sealed class ExchangeStore
 {
-    private readonly Dictionary<string, HttpExchange> _exchanges = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HttpExchange> _exchanges = [with(StringComparer.Ordinal)];
 
-    /// <summary>Records the exchange of the request named <paramref name="requestName"/>.</summary>
+    /// <summary>
+    /// Records the exchange of the request named <paramref name="requestName"/>.
+    /// </summary>
     /// <exception cref="InvalidOperationException">An exchange is already stored under that name.</exception>
     public void Add(string requestName, HttpExchange exchange)
     {
@@ -22,7 +26,9 @@ internal sealed class ExchangeStore
         }
     }
 
-    /// <summary>Gets the exchange of the request named <paramref name="requestName"/>, matched by exact case.</summary>
+    /// <summary>
+    /// Gets the exchange of the request named <paramref name="requestName"/>, matched by exact case.
+    /// </summary>
     public bool TryGet(string requestName, [NotNullWhen(true)] out HttpExchange? exchange)
     {
         ArgumentNullException.ThrowIfNull(requestName);

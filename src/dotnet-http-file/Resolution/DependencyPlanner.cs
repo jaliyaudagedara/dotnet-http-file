@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using DotNetHttpFile.Parsing;
 using DotNetHttpFile.Templates;
@@ -19,14 +18,16 @@ internal static class DependencyPlanner
     /// Lists the requests to send for <paramref name="target"/>: every named request it references, directly,
     /// through a file variable or through another dependency, and then the target itself.
     /// </summary>
-    /// <returns>Dependencies in the order they are first referenced, each once, with the target last.</returns>
+    /// <returns>
+    /// Dependencies in the order they are first referenced, each once, with the target last.
+    /// </returns>
     /// <exception cref="HttpFileException">A reference names no request, or the references form a cycle.</exception>
     public static IReadOnlyList<RequestDefinition> Plan(HttpFile file, RequestDefinition target)
     {
         ArgumentNullException.ThrowIfNull(file);
         ArgumentNullException.ThrowIfNull(target);
 
-        Dictionary<string, RequestDefinition> requestsByName = new(StringComparer.Ordinal);
+        Dictionary<string, RequestDefinition> requestsByName = [with(StringComparer.Ordinal)];
         foreach (RequestDefinition request in file.Requests)
         {
             if (request.Name is not null)
@@ -54,8 +55,7 @@ internal static class DependencyPlanner
         {
             if (!requestsByName.TryGetValue(reference.RequestName, out RequestDefinition? dependency))
             {
-                throw new HttpFileException(string.Format(
-                    CultureInfo.CurrentCulture,
+                throw new HttpFileException(Messages.Format(
                     s_requestNotFoundFormat,
                     reference.RequestName,
                     reference.Line));
@@ -66,8 +66,7 @@ internal static class DependencyPlanner
             {
                 IEnumerable<string?> names = path.Skip(cycleStart).Append(dependency).Select(step => step.Name);
 
-                throw new HttpFileException(string.Format(
-                    CultureInfo.CurrentCulture,
+                throw new HttpFileException(Messages.Format(
                     s_requestDependencyCycleFormat,
                     string.Join(CycleSeparator, names)));
             }
@@ -85,7 +84,7 @@ internal static class DependencyPlanner
     private static List<RequestReference> FindReferences(HttpFile file, RequestDefinition request)
     {
         List<RequestReference> references = [];
-        HashSet<FileVariable> scannedVariables = new(ReferenceEqualityComparer.Instance);
+        HashSet<FileVariable> scannedVariables = [with(ReferenceEqualityComparer.Instance)];
 
         CollectReferences(file, request.Url, request.Line, scannedVariables, references);
         foreach (HeaderDefinition header in request.Headers)

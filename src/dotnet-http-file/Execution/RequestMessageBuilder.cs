@@ -1,20 +1,18 @@
 using System.Buffers;
-using System.Globalization;
 using System.Net;
+using System.Net.Mime;
 using System.Text;
 
 namespace DotNetHttpFile.Execution;
 
 internal static class RequestMessageBuilder
 {
-    public const string DefaultContentType = "text/plain; charset=utf-8";
+    public const string DefaultContentType = MediaTypeNames.Text.Plain + "; charset=utf-8";
 
-    private const string ContentTypeHeader = "Content-Type";
+    private static readonly SearchValues<char> s_lineBreakCharacters = SearchValues.Create("\r\n\0");
 
     private static readonly CompositeFormat s_contentHeaderWithoutBodyFormat =
         CompositeFormat.Parse(Resources.ContentHeaderWithoutBody);
-
-    private static readonly SearchValues<char> s_lineBreakCharacters = SearchValues.Create("\r\n\0");
 
     private static readonly CompositeFormat s_headerNotSendableFormat =
         CompositeFormat.Parse(Resources.HeaderNotSendable);
@@ -25,7 +23,9 @@ internal static class RequestMessageBuilder
     private static readonly CompositeFormat s_unsupportedHttpVersionFormat =
         CompositeFormat.Parse(Resources.UnsupportedHttpVersion);
 
-    /// <summary>Builds the message that sends <paramref name="request"/>. The caller disposes it.</summary>
+    /// <summary>
+    /// Builds the message that sends <paramref name="request"/>. The caller disposes it.
+    /// </summary>
     /// <param name="request">The request, whose header lines are parallel to its headers.</param>
     /// <param name="warnings">
     /// Receives a message for each header that is left out: a content header on a request without a body.
@@ -65,9 +65,9 @@ internal static class RequestMessageBuilder
 
             AddHeaders(message, request, warnings);
 
-            if (message.Content is not null && !message.Content.Headers.NonValidated.Contains(ContentTypeHeader))
+            if (message.Content is not null && !message.Content.Headers.NonValidated.Contains(HeaderNames.ContentType))
             {
-                message.Content.Headers.TryAddWithoutValidation(ContentTypeHeader, DefaultContentType);
+                message.Content.Headers.TryAddWithoutValidation(HeaderNames.ContentType, DefaultContentType);
             }
 
             return message;
@@ -86,7 +86,7 @@ internal static class RequestMessageBuilder
             "HTTP/1.0" => HttpVersion.Version10,
             "HTTP/2" or "HTTP/2.0" => HttpVersion.Version20,
             "HTTP/3" or "HTTP/3.0" => HttpVersion.Version30,
-            _ => throw new HttpFileException(Format(s_unsupportedHttpVersionFormat, httpVersion)),
+            _ => throw new HttpFileException(Messages.Format(s_unsupportedHttpVersionFormat, httpVersion)),
         };
 
     private static void AddHeaders(HttpRequestMessage message, ResolvedRequest request, ICollection<string> warnings)
@@ -103,7 +103,7 @@ internal static class RequestMessageBuilder
             // Nothing below validates the value, so a line break in it would go out as a header of its own.
             if (value.AsSpan().ContainsAny(s_lineBreakCharacters))
             {
-                throw new HttpFileException(Format(s_headerValueHasLineBreakFormat, name, line));
+                throw new HttpFileException(Messages.Format(s_headerValueHasLineBreakFormat, name, line));
             }
 
             if (message.Headers.TryAddWithoutValidation(name, value))
@@ -118,14 +118,11 @@ internal static class RequestMessageBuilder
 
             if (contentHeaderProbe is not null && contentHeaderProbe.Headers.TryAddWithoutValidation(name, value))
             {
-                warnings.Add(Format(s_contentHeaderWithoutBodyFormat, name, line));
+                warnings.Add(Messages.Format(s_contentHeaderWithoutBodyFormat, name, line));
                 continue;
             }
 
-            throw new HttpFileException(Format(s_headerNotSendableFormat, name, line));
+            throw new HttpFileException(Messages.Format(s_headerNotSendableFormat, name, line));
         }
     }
-
-    private static string Format(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
-        string.Format(CultureInfo.CurrentCulture, format, arguments);
 }

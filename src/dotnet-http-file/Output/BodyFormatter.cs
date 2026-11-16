@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Net.Http.Headers;
+using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
 using System.Text.Unicode;
@@ -9,14 +10,13 @@ using DotNetHttpFile.Execution;
 
 namespace DotNetHttpFile.Output;
 
-/// <summary>Decides whether a response body can be shown as text, and makes it readable.</summary>
+/// <summary>
+/// Decides whether a response body can be shown as text, and makes it readable.
+/// </summary>
 internal static class BodyFormatter
 {
     private const string TextTypePrefix = "text/";
-    private const string JsonMediaType = "application/json";
-    private const string XmlMediaType = "application/xml";
     private const string JavaScriptMediaType = "application/javascript";
-    private const string FormMediaType = "application/x-www-form-urlencoded";
     private const string JsonSuffix = "+json";
     private const string XmlSuffix = "+xml";
     private const string XmlIndent = "  ";
@@ -59,7 +59,7 @@ internal static class BodyFormatter
             || IsJson(mediaType)
             || IsXml(mediaType)
             || mediaType.Equals(JavaScriptMediaType, StringComparison.OrdinalIgnoreCase)
-            || mediaType.Equals(FormMediaType, StringComparison.OrdinalIgnoreCase);
+            || mediaType.Equals(MediaTypeNames.Application.FormUrlEncoded, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -92,11 +92,11 @@ internal static class BodyFormatter
         MediaTypeHeaderValue.TryParse(contentType, out MediaTypeHeaderValue? parsed) ? parsed.MediaType : null;
 
     private static bool IsJson(string mediaType) =>
-        mediaType.Equals(JsonMediaType, StringComparison.OrdinalIgnoreCase)
+        mediaType.Equals(MediaTypeNames.Application.Json, StringComparison.OrdinalIgnoreCase)
         || mediaType.EndsWith(JsonSuffix, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsXml(string mediaType) =>
-        mediaType.Equals(XmlMediaType, StringComparison.OrdinalIgnoreCase)
+        mediaType.Equals(MediaTypeNames.Application.Xml, StringComparison.OrdinalIgnoreCase)
         || mediaType.EndsWith(XmlSuffix, StringComparison.OrdinalIgnoreCase);
 
     private static string? IndentJson(string text)

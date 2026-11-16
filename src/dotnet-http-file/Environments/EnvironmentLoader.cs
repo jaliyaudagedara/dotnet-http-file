@@ -1,8 +1,6 @@
-using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Unicode;
 
 namespace DotNetHttpFile.Environments;
 
@@ -11,15 +9,6 @@ internal static class EnvironmentLoader
     private const string SharedName = "$shared";
     private const string UserFileSuffix = ".user";
     private const string ProviderProperty = "provider";
-    private const string NameSeparator = ", ";
-
-    // Duplicate names are rejected while parsing because JsonObject throws ArgumentException on them later.
-    private static readonly JsonDocumentOptions s_documentOptions = new()
-    {
-        CommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true,
-        AllowDuplicateProperties = false,
-    };
 
     private static readonly CompositeFormat s_environmentFileNotFoundFormat =
         CompositeFormat.Parse(Resources.EnvironmentFileNotFound);
@@ -76,11 +65,8 @@ internal static class EnvironmentLoader
                 return EnvironmentSet.None;
             }
 
-            throw new HttpFileException(string.Format(
-                CultureInfo.CurrentCulture,
-                s_environmentFileNotFoundFormat,
-                environmentName,
-                httpFilePath));
+            throw new HttpFileException(
+                Messages.Format(s_environmentFileNotFoundFormat, environmentName, httpFilePath));
         }
 
         JsonObject root = await ReadAsync(environmentFilePath, cancellationToken).ConfigureAwait(false);
@@ -107,7 +93,7 @@ internal static class EnvironmentLoader
             throw EnvironmentNotFound(environmentName, environmentFilePath, availableNames);
         }
 
-        Dictionary<string, EnvironmentValue> values = new(StringComparer.Ordinal);
+        Dictionary<string, EnvironmentValue> values = [with(StringComparer.Ordinal)];
         string[] layerNames = environmentName is null ? [SharedName] : [SharedName, environmentName];
         foreach (string layerName in layerNames)
         {
@@ -124,24 +110,13 @@ internal static class EnvironmentLoader
     {
         byte[] bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
 
-        // The parser does not validate UTF-8 inside strings, so a file in another encoding would parse
-        // and then fail with InvalidOperationException on the first string read.
-        if (!Utf8.IsValid(bytes))
-        {
-            throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_invalidEnvironmentFileFormat, path));
-        }
-
-        ReadOnlySpan<byte> utf8Json = bytes;
-        if (utf8Json.StartsWith(Encoding.UTF8.Preamble))
-        {
-            utf8Json = utf8Json[Encoding.UTF8.Preamble.Length..];
-        }
-
         JsonNode? root;
         try
         {
-            root = JsonNode.Parse(utf8Json, nodeOptions: null, s_documentOptions);
+            if (!JsonFile.TryParse(bytes, out root))
+            {
+                throw new HttpFileException(Messages.Format(s_invalidEnvironmentFileFormat, path));
+            }
         }
         catch (JsonException exception)
         {
@@ -149,8 +124,7 @@ internal static class EnvironmentLoader
         }
 
         return root as JsonObject
-            ?? throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_environmentFileNotObjectFormat, path));
+            ?? throw new HttpFileException(Messages.Format(s_environmentFileNotObjectFormat, path));
     }
 
     private static void ApplyLayer(
@@ -165,11 +139,8 @@ internal static class EnvironmentLoader
 
         if (layer is not JsonObject variables)
         {
-            throw new HttpFileException(string.Format(
-                CultureInfo.CurrentCulture,
-                s_environmentUnsupportedValueFormat,
-                layerName,
-                sourceFile.Path));
+            throw new HttpFileException(
+                Messages.Format(s_environmentUnsupportedValueFormat, layerName, sourceFile.Path));
         }
 
         foreach ((string name, JsonNode? node) in variables)
@@ -180,35 +151,27 @@ internal static class EnvironmentLoader
 
     private static EnvironmentValue ToValue(string name, JsonNode? node, string path)
     {
-        switch (node)
+        if (JsonFile.ScalarText(node) is string text)
         {
-            case JsonValue value when value.GetValueKind() is JsonValueKind.String:
-                return new LiteralEnvironmentValue(value.GetValue<string>());
-
-            case JsonValue value
-                when value.GetValueKind() is JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False:
-                return new LiteralEnvironmentValue(value.GetValue<JsonElement>().GetRawText());
-
-            case JsonObject definition
-                when definition[ProviderProperty] is JsonValue provider
-                    && provider.GetValueKind() is JsonValueKind.String:
-                return new ProviderEnvironmentValue(provider.GetValue<string>(), definition);
-
-            default:
-                throw new HttpFileException(string.Format(
-                    CultureInfo.CurrentCulture,
-                    s_environmentVariableUnsupportedValueFormat,
-                    name,
-                    path));
+            return new LiteralEnvironmentValue(text);
         }
+
+        if (node is JsonObject definition
+            && definition[ProviderProperty] is JsonValue provider
+            && provider.GetValueKind() is JsonValueKind.String)
+        {
+            return new ProviderEnvironmentValue(provider.GetValue<string>(), definition);
+        }
+
+        throw new HttpFileException(Messages.Format(s_environmentVariableUnsupportedValueFormat, name, path));
     }
 
     // The JsonException message can quote the file content, so it stays out of the message.
     private static HttpFileException InvalidJson(string path, JsonException exception)
     {
         string message = exception.LineNumber is long zeroBasedLine
-            ? string.Format(CultureInfo.CurrentCulture, s_invalidEnvironmentFileJsonFormat, path, zeroBasedLine + 1)
-            : string.Format(CultureInfo.CurrentCulture, s_invalidEnvironmentFileFormat, path);
+            ? Messages.Format(s_invalidEnvironmentFileJsonFormat, path, zeroBasedLine + 1)
+            : Messages.Format(s_invalidEnvironmentFileFormat, path);
 
         return new HttpFileException(message, exception);
     }
@@ -220,19 +183,15 @@ internal static class EnvironmentLoader
     {
         if (availableNames.Length == 0)
         {
-            return new HttpFileException(string.Format(
-                CultureInfo.CurrentCulture,
-                s_environmentNotFoundNoneDefinedFormat,
-                environmentName,
-                environmentFilePath));
+            return new HttpFileException(
+                Messages.Format(s_environmentNotFoundNoneDefinedFormat, environmentName, environmentFilePath));
         }
 
-        return new HttpFileException(string.Format(
-            CultureInfo.CurrentCulture,
+        return new HttpFileException(Messages.Format(
             s_environmentNotFoundFormat,
             environmentName,
             environmentFilePath,
-            string.Join(NameSeparator, availableNames)));
+            string.Join(Messages.ListSeparator, availableNames)));
     }
 
     private sealed record SourceFile(string Path, JsonObject Root);

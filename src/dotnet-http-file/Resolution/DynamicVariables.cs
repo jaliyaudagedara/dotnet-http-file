@@ -64,7 +64,9 @@ internal sealed class DynamicVariables(
     private static readonly CompositeFormat s_unknownDynamicVariableFormat =
         CompositeFormat.Parse(Resources.UnknownDynamicVariable);
 
-    /// <summary>Produces the value of a <c>{{$function arguments}}</c> expression.</summary>
+    /// <summary>
+    /// Produces the value of a <c>{{$function arguments}}</c> expression.
+    /// </summary>
     /// <exception cref="HttpFileException">
     /// The function is unknown, its arguments are invalid, or the variable it names is not defined.
     /// </exception>
@@ -83,8 +85,7 @@ internal sealed class DynamicVariables(
             LocalDateTimeFunction => GetDateTime(LocalDateTimeFunction, LocalDateTimeSyntax, arguments, isLocal: true),
             TimestampFunction => GetTimestamp(arguments),
             GuidFunction => GetGuid(arguments),
-            _ => throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_unknownDynamicVariableFormat, segment.Function)),
+            _ => throw new HttpFileException(Messages.Format(s_unknownDynamicVariableFormat, segment.Function)),
         };
     }
 
@@ -112,8 +113,7 @@ internal sealed class DynamicVariables(
     {
         if (!TryParseInteger(text, out int value))
         {
-            throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_invalidDynamicVariableIntegerFormat, function, text));
+            throw new HttpFileException(Messages.Format(s_invalidDynamicVariableIntegerFormat, function, text));
         }
 
         return value;
@@ -147,34 +147,23 @@ internal sealed class DynamicVariables(
         catch (ArgumentOutOfRangeException exception)
         {
             throw new HttpFileException(
-                string.Format(
-                    CultureInfo.CurrentCulture,
-                    s_dynamicVariableOffsetOutOfRangeFormat,
-                    function,
-                    amountText,
-                    unit),
+                Messages.Format(s_dynamicVariableOffsetOutOfRangeFormat, function, amountText, unit),
                 exception);
         }
     }
 
     private static HttpFileException InvalidOffset(string function, string amountText, string unit) =>
-        new(string.Format(
-            CultureInfo.CurrentCulture,
-            s_invalidDynamicVariableOffsetFormat,
-            function,
-            amountText,
-            unit));
+        new(Messages.Format(s_invalidDynamicVariableOffsetFormat, function, amountText, unit));
 
     private static HttpFileException InvalidArguments(string function, string syntax) =>
-        new(string.Format(CultureInfo.CurrentCulture, s_invalidDynamicVariableArgumentsFormat, function, syntax));
+        new(Messages.Format(s_invalidDynamicVariableArgumentsFormat, function, syntax));
 
     private string GetProcessEnv(IReadOnlyList<string> arguments)
     {
         string name = RequireName(ProcessEnvFunction, ProcessEnvSyntax, arguments);
 
         return getEnvironmentVariable(name)
-            ?? throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_environmentVariableNotSetFormat, name));
+            ?? throw new HttpFileException(Messages.Format(s_environmentVariableNotSetFormat, name));
     }
 
     private async Task<string> GetDotEnvAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
@@ -184,14 +173,12 @@ internal sealed class DynamicVariables(
 
         if (dotEnv.Values is null)
         {
-            throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_dotEnvFileNotFoundFormat, name, dotEnv.Path));
+            throw new HttpFileException(Messages.Format(s_dotEnvFileNotFoundFormat, name, dotEnv.Path));
         }
 
         if (!dotEnv.Values.TryGetValue(name, out string? value))
         {
-            throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_dotEnvVariableNotDefinedFormat, name, dotEnv.Path));
+            throw new HttpFileException(Messages.Format(s_dotEnvVariableNotDefinedFormat, name, dotEnv.Path));
         }
 
         return value;
@@ -213,8 +200,7 @@ internal sealed class DynamicVariables(
         int max = ParseInteger(RandomIntFunction, arguments[1]);
         if (min > max)
         {
-            throw new HttpFileException(string.Format(
-                CultureInfo.CurrentCulture,
+            throw new HttpFileException(Messages.Format(
                 s_invalidDynamicVariableRangeFormat,
                 RandomIntFunction,
                 arguments[0],
@@ -257,7 +243,7 @@ internal sealed class DynamicVariables(
         catch (FormatException exception)
         {
             throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_invalidDynamicVariableDateFormatFormat, function, format),
+                Messages.Format(s_invalidDynamicVariableDateFormatFormat, function, format),
                 exception);
         }
     }

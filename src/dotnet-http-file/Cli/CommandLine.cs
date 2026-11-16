@@ -1,7 +1,6 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.CommandLine.Parsing;
-using System.Globalization;
 using System.Text;
 using DotNetHttpFile.Output;
 using DotNetHttpFile.Resolution;
@@ -41,7 +40,9 @@ internal static class CommandLine
     private static readonly CompositeFormat s_unrecognizedOptionFormat =
         CompositeFormat.Parse(Resources.UnrecognizedOption);
 
-    /// <summary>Parses <paramref name="args"/> and calls <paramref name="run"/> with what they ask for.</summary>
+    /// <summary>
+    /// Parses <paramref name="args"/> and calls <paramref name="run"/> with what they ask for.
+    /// </summary>
     /// <returns>
     /// The exit code of <paramref name="run"/>; <see cref="ExitCodes.NotSent"/> when the arguments are not valid,
     /// with the reason on standard error; <see cref="ExitCodes.Success"/> for <c>--help</c> and <c>--version</c>.
@@ -109,12 +110,13 @@ internal static class CommandLine
                 ? OutputMode.Full
                 : ShowMode(parseResult.GetValue(showOption));
 
-            RunOptions options = new(
-                parseResult.GetRequiredValue(fileArgument),
-                parseResult.GetValue(nameOption),
-                parseResult.GetValue(envOption),
-                forcedMode,
-                parseResult.GetValue(insecureOption));
+            RunOptions options = new(parseResult.GetRequiredValue(fileArgument))
+            {
+                RequestName = parseResult.GetValue(nameOption),
+                EnvironmentName = parseResult.GetValue(envOption),
+                ForcedMode = forcedMode,
+                Insecure = parseResult.GetValue(insecureOption),
+            };
 
             return run(options, actionCancellationToken);
         });
@@ -137,8 +139,7 @@ internal static class CommandLine
             string? unknownOption = FindUnknownOption(parseResult.GetResult(fileArgument));
             if (unknownOption is not null)
             {
-                renderer.RenderError(
-                    string.Format(CultureInfo.CurrentCulture, s_unrecognizedOptionFormat, unknownOption));
+                renderer.RenderError(Messages.Format(s_unrecognizedOptionFormat, unknownOption));
 
                 return Task.FromResult(ExitCodes.NotSent);
             }
@@ -212,11 +213,11 @@ internal static class CommandLine
         string path = result.Tokens[0].Value;
         if (!File.Exists(path))
         {
-            result.AddError(string.Format(CultureInfo.CurrentCulture, s_fileNotFoundFormat, path));
+            result.AddError(Messages.Format(s_fileNotFoundFormat, path));
         }
         else if (!s_fileExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
         {
-            result.AddError(string.Format(CultureInfo.CurrentCulture, s_fileExtensionNotSupportedFormat, path));
+            result.AddError(Messages.Format(s_fileExtensionNotSupportedFormat, path));
         }
     }
 }

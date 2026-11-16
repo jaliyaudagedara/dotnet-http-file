@@ -9,10 +9,12 @@ internal sealed record HttpFile(
     IReadOnlyList<FileVariable> Variables,
     IReadOnlyList<RequestDefinition> Requests)
 {
-    /// <summary>Returns the last definition of each file variable defined above <paramref name="line"/>.</summary>
+    /// <summary>
+    /// Returns the last definition of each file variable defined above <paramref name="line"/>.
+    /// </summary>
     public IReadOnlyDictionary<string, FileVariable> VariablesVisibleAt(int line)
     {
-        Dictionary<string, FileVariable> visible = new(StringComparer.Ordinal);
+        Dictionary<string, FileVariable> visible = [with(StringComparer.Ordinal)];
         foreach (FileVariable variable in Variables)
         {
             if (variable.Line < line)
