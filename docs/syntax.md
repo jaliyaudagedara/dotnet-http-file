@@ -6,6 +6,11 @@ The tool reads the Visual Studio 2026 18.13 `.http` syntax. See
 [Use .http files in Visual Studio](https://learn.microsoft.com/aspnet/core/test/http-files) and the
 [18.13 release notes](https://learn.microsoft.com/visualstudio/releases/2026/release-notes-insiders).
 
+## Request names
+
+`--name` matches a `# @name` first (case-sensitive), else a `### <title>` (case-insensitive), so a request can be
+picked with or without a `# @name`. If two requests share the matched title, the run stops with an error.
+
 ## Request dependencies
 
 If the selected request uses `{{x.response...}}` or `{{x.request...}}`, request `x` is sent first, on every

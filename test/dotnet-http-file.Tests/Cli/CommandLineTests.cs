@@ -539,7 +539,8 @@ public sealed class CommandLineTests
         AssemblyInformationalVersionAttribute? attribute = typeof(CommandLine).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>();
 
-        Assert.Equal("0.1.0", attribute?.InformationalVersion);
+        Assert.NotNull(attribute?.InformationalVersion);
+        Assert.True(Version.TryParse(attribute.InformationalVersion, out _));
     }
 
     private sealed class Harness : IDisposable

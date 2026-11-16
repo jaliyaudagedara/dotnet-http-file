@@ -12,7 +12,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>dotnet-http-file</ToolCommandName>
     <PackageId>dotnet-http-file</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Authors>Jaliya Udagedara</Authors>
     <Description>Run Visual Studio .http files from the command line.</Description>

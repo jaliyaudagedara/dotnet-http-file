@@ -33,8 +33,10 @@ Try `samples/Basics/Basics.http` (no setup) or `samples/Entra/Entra.http` (needs
 |---|---|
 | `-n`, `--name <name>` | The request to run, from `# @name <name>` or a `### <title>`. |
 | `-e`, `--env <env>` | The environment in `http-client.env.json`. |
-| `--show <full\|body\|headers\|status>` | What to print. `-v` is `--show full`. |
+| `-v`, `--verbose` | Log what the tool does (files read, requests, tokens acquired) to stderr, never a token or secret-provider value. |
+| `--show <full\|body\|headers\|status>` | What to print. |
 | `-k`, `--insecure` | Skip server certificate validation. |
+| `--var <name=value>` | Set a variable for this run, over the file and the environment. Can be repeated; the last one wins. |
 
 ## Exit codes
 

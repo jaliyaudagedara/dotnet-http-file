@@ -29,3 +29,6 @@ its account wins. Set `tenantId`, or use only the CLI:
 ```
 AZURE_TOKEN_CREDENTIALS=AzureCliCredential dotnet http-file MyApi.http --name getToDos --env dev
 ```
+
+After such a 401 on a request that used `EntraAccessToken`, the tool prints a hint on stderr that names
+`tenantId`. `-v` shows which credential supplied the token.
