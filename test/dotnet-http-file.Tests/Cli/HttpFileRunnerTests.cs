@@ -1,14 +1,20 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Mime;
 using System.Runtime.InteropServices;
 using System.Text;
+using Azure;
+using Azure.Core;
+using Azure.Security.KeyVault.Secrets;
 using DotNetHttpFile.Cli;
 using DotNetHttpFile.Environments;
 using DotNetHttpFile.Execution;
 using DotNetHttpFile.Output;
 using DotNetHttpFile.Parsing;
 using DotNetHttpFile.Secrets;
+using DotNetHttpFile.Tests.Secrets;
 using DotNetHttpFile.Tests.Support;
+using NSubstitute;
 using Spectre.Console.Testing;
 
 namespace DotNetHttpFile.Tests.Cli;
@@ -1373,6 +1379,273 @@ public sealed class HttpFileRunnerTests
             harness.ErrorLines);
     }
 
+    [Fact]
+    public async Task RunAsync_Verbose_LogsFilesDependenciesAndRequests()
+    {
+        using Harness harness = new();
+        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(JsonResponse("""{"id": 7}""")));
+        string path = await harness.WriteHttpFileAsync(
+            """
+            # @name getToDos
+            GET http://localhost/todos
+
+            ###
+
+            # @name getToDo
+            GET http://localhost/todos/{{getToDos.response.body.$.id}}
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { RequestName = "getToDo", Verbose = true });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(
+            [
+                $"verbose: HTTP file: {Path.GetFullPath(path)}",
+                "verbose: Environment file: none",
+                "verbose: Environment: none",
+                "verbose: Plan: getToDos, getToDo",
+            ],
+            harness.ErrorLines[..4]);
+        Assert.Collection(
+            harness.ErrorLines[4..],
+            line => Assert.Matches(@"^verbose: GET http://localhost/todos -> 200 OK in \d+ ms$", line),
+            line => Assert.Matches(@"^verbose: GET http://localhost/todos/7 -> 200 OK in \d+ ms$", line));
+    }
+
+    [Fact]
+    public async Task RunAsync_VerboseUnnamedRequests_PlanUsesTheTitleOrTheRequestLine()
+    {
+        using Harness harness = new();
+        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(JsonResponse("{}")));
+        harness.Picker.Choose = requests => requests[1];
+        string path = await harness.WriteHttpFileAsync(
+            """
+            @id = 5
+
+            ### List them
+            GET http://localhost/todos
+
+            ###
+
+            GET http://localhost/todos/{{id}}
+            """);
+
+        await harness.RunAsync(new RunOptions(path) { RequestName = "List them", Verbose = true });
+        await harness.RunAsync(new RunOptions(path) { Verbose = true });
+
+        Assert.Equal(
+            ["verbose: Plan: List them", "verbose: Plan: GET http://localhost/todos/{{id}}"],
+            harness.ErrorLines.Where(line => line.StartsWith("verbose: Plan: ", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task RunAsync_VerboseWithEnvironment_LogsTheFileAndTheEnvironment()
+    {
+        using Harness harness = new();
+        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(JsonResponse("{}")));
+        string environmentPath = await harness.WriteFileAsync(
+            EnvironmentFileLocator.FileName,
+            """{ "dev": { "id": "value-4711" } }""");
+        string path = await harness.WriteHttpFileAsync("GET http://localhost/todos?id={{id}}");
+
+        await harness.RunAsync(new RunOptions(path)
+        {
+            EnvironmentName = "dev",
+            Verbose = true,
+            ForcedMode = OutputMode.Status,
+        });
+
+        Assert.Equal(
+            [$"verbose: Environment file: {environmentPath}", "verbose: Environment: dev"],
+            harness.ErrorLines[1..3]);
+        Assert.DoesNotContain(harness.ErrorLines[..4], line => line.Contains("value-4711", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsync_VerboseWithUserFile_LogsTheUserFile()
+    {
+        using Harness harness = new();
+        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(JsonResponse("{}")));
+        string environmentPath = await harness.WriteFileAsync(
+            EnvironmentFileLocator.FileName,
+            """{ "dev": { "id": "value-4711" } }""");
+        string userPath = await harness.WriteFileAsync(
+            EnvironmentFileLocator.FileName + ".user",
+            """{ "dev": { "id": "value-4712" } }""");
+        string path = await harness.WriteHttpFileAsync("GET http://localhost/todos?id={{id}}");
+
+        await harness.RunAsync(new RunOptions(path)
+        {
+            EnvironmentName = "dev",
+            Verbose = true,
+            ForcedMode = OutputMode.Status,
+        });
+
+        Assert.Equal(
+            [
+                $"verbose: Environment file: {environmentPath}",
+                $"verbose: Environment user file: {userPath}",
+                "verbose: Environment: dev",
+            ],
+            harness.ErrorLines[1..4]);
+        Assert.DoesNotContain(harness.ErrorLines[..5], line => line.Contains("value-471", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsync_VerboseDotEnv_LogsTheDotEnvFile()
+    {
+        using Harness harness = new();
+        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(JsonResponse("{}")));
+        string dotEnvPath = await harness.WriteFileAsync(".env", "TODO_ID=value-4713");
+        string path = await harness.WriteHttpFileAsync(
+            "GET http://localhost/todos/{{$dotenv TODO_ID}}?again={{$dotenv TODO_ID}}");
+
+        await harness.RunAsync(new RunOptions(path) { Verbose = true, ForcedMode = OutputMode.Status });
+
+        Assert.Equal(
+            [$"verbose: .env file: {dotEnvPath}"],
+            harness.ErrorLines.Where(line => line.StartsWith("verbose: .env file: ", StringComparison.Ordinal)));
+        Assert.DoesNotContain(
+            harness.ErrorLines.Where(line => line.Contains(".env file", StringComparison.Ordinal)),
+            line => line.Contains("value-4713", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsync_VerboseGzipResponse_LogsTheDecodedCoding()
+    {
+        using Harness harness = new();
+        harness.CreateHandler = _ => new StubHandler((_, _) =>
+            Task.FromResult(GzipResponse(HttpStatusCode.OK, Compression.Gzip("""{"id": 7}"""u8))));
+        string path = await harness.WriteHttpFileAsync("GET http://localhost/todos");
+
+        await harness.RunAsync(new RunOptions(path) { Verbose = true });
+
+        Assert.Equal("verbose: Decoded: gzip", harness.ErrorLines[^1]);
+    }
+
+    [Fact]
+    public async Task RunAsync_VerboseBodilessContentType_LogsTheDroppedHeader()
+    {
+        using Harness harness = new();
+        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(JsonResponse("{}")));
+        string path = await harness.WriteHttpFileAsync(
+            """
+            GET http://localhost/todos
+            Content-Type: application/json
+            """);
+
+        await harness.RunAsync(new RunOptions(path) { Verbose = true });
+
+        Assert.Contains(
+            "verbose: Content-Type on line 2 not sent: the request has no body.",
+            harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_VerbosePiped_StdoutHoldsOnlyTheBody()
+    {
+        using Harness harness = new() { IsOutputRedirected = true };
+        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(JsonResponse("""{"id": 7}""")));
+        string path = await harness.WriteHttpFileAsync("GET http://localhost/todos");
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { Verbose = true });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal("""{"id": 7}"""u8.ToArray(), harness.StandardOutput.ToArray());
+        Assert.Empty(harness.Output.Output);
+        Assert.Equal(5, harness.ErrorLines.Count(line => line.StartsWith("verbose: ", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task RunAsync_Verbose_NeverPrintsTheToken()
+    {
+        const string AccessToken = "tok-xyz";
+        using Harness harness = new();
+        harness.CreateProviders = log => new SecretProviderRegistry(
+        [
+            new EntraAccessTokenProvider(new Lazy<TokenCredential>(new FakeTokenCredential(AccessToken)), log),
+        ]);
+        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(JsonResponse("{}")));
+        await harness.WriteFileAsync(
+            EnvironmentFileLocator.FileName,
+            """{ "dev": { "token": { "provider": "EntraAccessToken", "scope": "api://todos/.default" } } }""");
+        string path = await harness.WriteHttpFileAsync(
+            """
+            GET http://localhost/todos?access_token={{token}}
+            Authorization: Bearer {{token}}
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev", Verbose = true });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Contains(
+            harness.ErrorLines,
+            line => line.StartsWith("verbose: Token for api://todos/.default: tenant unknown", StringComparison.Ordinal));
+        Assert.DoesNotContain(AccessToken, harness.Output.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain(AccessToken, harness.Error.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            AccessToken,
+            Encoding.UTF8.GetString(harness.StandardOutput.ToArray()),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_VerboseKeyVaultFirst_StillLogsTheCredential()
+    {
+        using Harness harness = new();
+        Lazy<TokenCredential> credential = new(new FakeTokenCredential());
+        SecretClient client = Substitute.For<SecretClient>();
+        client
+            .GetSecretAsync("api-key", null, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                // DefaultAzureCredential reports its credential once, on the first token, which Key Vault gets here.
+                AzureIdentityEvents.RaiseCredentialSelected("Azure.Identity.AzureCliCredential");
+
+                return Response.FromValue(
+                    SecretModelFactory.KeyVaultSecret(new SecretProperties("api-key"), "vault-value"),
+                    Substitute.For<Response>());
+            });
+        harness.CreateProviders = log => new SecretProviderRegistry(
+        [
+            new AzureKeyVaultProvider(credential, (_, _) => client, log),
+            new EntraAccessTokenProvider(credential, log),
+        ]);
+        harness.CreateHandler = _ => new StubHandler((_, _) => Task.FromResult(JsonResponse("{}")));
+        await harness.WriteFileAsync(
+            EnvironmentFileLocator.FileName,
+            """
+            {
+              "dev": {
+                "apiKey": {
+                  "provider": "AzureKeyVault",
+                  "resourceId": "/subscriptions/x/resourceGroups/y/providers/Microsoft.KeyVault/vaults/my-vault",
+                  "secretName": "api-key"
+                },
+                "token": { "provider": "EntraAccessToken", "scope": "api://todos/.default" }
+              }
+            }
+            """);
+        string path = await harness.WriteHttpFileAsync(
+            """
+            GET http://localhost/todos?key={{apiKey}}
+            Authorization: Bearer {{token}}
+            """);
+
+        await harness.RunAsync(new RunOptions(path)
+        {
+            EnvironmentName = "dev",
+            Verbose = true,
+            ForcedMode = OutputMode.Status,
+        });
+
+        Assert.Collection(
+            harness.ErrorLines.Where(line => line.StartsWith("verbose: Credential", StringComparison.Ordinal)
+                || line.StartsWith("verbose: Token", StringComparison.Ordinal)),
+            line => Assert.Equal("verbose: Credential: AzureCliCredential", line),
+            line => Assert.StartsWith("verbose: Token for api://todos/.default: ", line, StringComparison.Ordinal));
+    }
+
     // Windows refuses a second open of a file held without sharing; elsewhere the file loses its read permission.
     private static IDisposable MakeUnreadable(string path)
     {
@@ -1408,6 +1681,12 @@ public sealed class HttpFileRunnerTests
         public Task<string> ResolveAsync(SecretRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(resolve(request));
     }
+
+    private static HttpResponseMessage JsonResponse(string body) =>
+        new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, Encoding.UTF8, MediaTypeNames.Application.Json),
+        };
 
     private static HttpResponseMessage GzipResponse(HttpStatusCode statusCode, byte[] body)
     {
@@ -1464,6 +1743,11 @@ public sealed class HttpFileRunnerTests
 
         public Func<bool, HttpMessageHandler> CreateHandler { get; set; } = ToolHttpClient.CreateHandler;
 
+        /// <summary>
+        /// Creates the providers of a run from its diagnostic log. By default, a registry of <see cref="Providers"/>.
+        /// </summary>
+        public Func<DiagnosticLog, SecretProviderRegistry>? CreateProviders { get; set; }
+
         public int HandlersCreated => InsecureFlags.Count;
 
         public string OutputText => Normalize(Output.Output);
@@ -1498,7 +1782,7 @@ public sealed class HttpFileRunnerTests
             HttpFileRunner runner = new(
                 new ConsoleStreams(StandardOutput, Output, Error, IsInputRedirected, IsOutputRedirected),
                 Picker,
-                new SecretProviderRegistry(Providers),
+                CreateProviders ?? (_ => new SecretProviderRegistry(Providers)),
                 insecure =>
                 {
                     InsecureFlags.Add(insecure);

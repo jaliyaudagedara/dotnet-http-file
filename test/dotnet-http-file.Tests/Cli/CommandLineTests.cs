@@ -34,8 +34,8 @@ public sealed class CommandLineTests
         {
             RequestName = "todos",
             EnvironmentName = "dev",
-            ForcedMode = OutputMode.Full,
             Insecure = true,
+            Verbose = true,
         };
         Assert.Equal(expected, Assert.Single(harness.Runs));
     }
@@ -59,14 +59,15 @@ public sealed class CommandLineTests
     }
 
     [Fact]
-    public async Task Main_VerboseShortOption_ForcesFullMode()
+    public async Task Verbose_DoesNotForceAMode()
     {
         using Harness harness = new();
         string path = await harness.WriteFileAsync(HttpFileName);
 
         await harness.InvokeAsync(path, "-v");
 
-        Assert.Equal(OutputMode.Full, Assert.Single(harness.Runs).ForcedMode);
+        RunOptions options = Assert.Single(harness.Runs);
+        Assert.Equal(((OutputMode?)null, true), (options.ForcedMode, options.Verbose));
     }
 
     [Fact]
@@ -392,21 +393,19 @@ public sealed class CommandLineTests
         Assert.Empty(harness.Runs);
     }
 
-    [Theory]
-    [InlineData("body")]
-    [InlineData("full")]
-    [InlineData("headers")]
-    [InlineData("status")]
-    public async Task Main_VerboseAndShow_ReturnsNotSent(string value)
+    [Fact]
+    public async Task Verbose_WithShow_IsAllowed()
     {
         using Harness harness = new();
         string path = await harness.WriteFileAsync(HttpFileName);
 
-        int exitCode = await harness.InvokeAsync(path, "--verbose", "--show", value);
+        int exitCode = await harness.InvokeAsync(path, "-v", "--show", "body");
 
-        Assert.Equal(ExitCodes.NotSent, exitCode);
-        Assert.Equal(["error: --verbose and --show cannot be used together."], harness.ErrorLines);
-        Assert.Empty(harness.Runs);
+        RunOptions options = Assert.Single(harness.Runs);
+        Assert.Equal(
+            (ExitCodes.Success, OutputMode.Body, true),
+            (exitCode, options.ForcedMode, options.Verbose));
+        Assert.Empty(harness.Error.Output);
     }
 
     [Fact]

@@ -19,7 +19,7 @@ internal sealed record RunOptions(string FilePath)
     public string? EnvironmentName { get; init; }
 
     /// <summary>
-    /// The mode asked for with <c>--verbose</c> or <c>--show</c>, or null to choose it.
+    /// The mode asked for with <c>--show</c>, or null to choose it.
     /// </summary>
     public OutputMode? ForcedMode { get; init; }
 
@@ -32,4 +32,9 @@ internal sealed record RunOptions(string FilePath)
     /// The variables given to <c>--var</c>, or null.
     /// </summary>
     public IReadOnlyDictionary<string, string>? Variables { get; init; }
+
+    /// <summary>
+    /// True to write the diagnostic log to standard error (<c>--verbose</c>).
+    /// </summary>
+    public bool Verbose { get; init; }
 }

@@ -307,7 +307,7 @@ public sealed class VisualStudioConformanceTests
                     IsInputRedirected: false,
                     IsOutputRedirected: false),
                 new UnexpectedPicker(),
-                new SecretProviderRegistry(
+                _ => new SecretProviderRegistry(
                 [
                     new UnexpectedSecretProvider(EntraAccessTokenProvider.ProviderName),
                     new UnexpectedSecretProvider(AzureKeyVaultProvider.ProviderName),

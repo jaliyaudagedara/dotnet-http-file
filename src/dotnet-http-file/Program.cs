@@ -30,20 +30,20 @@ ConsoleStreams console = new(
     Console.IsOutputRedirected);
 
 Lazy<TokenCredential> credential = new(AzureCredentialFactory.Create);
-SecretProviderRegistry providers = new(
-[
-    new AspnetUserSecretsProvider(AspnetUserSecretsProvider.DefaultRoot()),
-    new AzureKeyVaultProvider(
-        credential,
-        static (vaultUri, tokenCredential) => new SecretClient(vaultUri, tokenCredential)),
-    new EncryptedProvider(),
-    new EntraAccessTokenProvider(credential),
-]);
 
 HttpFileRunner runner = new(
     console,
     new SpectreRequestPicker(console.Output),
-    providers,
+    log => new SecretProviderRegistry(
+    [
+        new AspnetUserSecretsProvider(AspnetUserSecretsProvider.DefaultRoot()),
+        new AzureKeyVaultProvider(
+            credential,
+            static (vaultUri, tokenCredential) => new SecretClient(vaultUri, tokenCredential),
+            log),
+        new EncryptedProvider(),
+        new EntraAccessTokenProvider(credential, log),
+    ]),
     ToolHttpClient.CreateHandler,
     TimeProvider.System,
     Environment.GetEnvironmentVariable);

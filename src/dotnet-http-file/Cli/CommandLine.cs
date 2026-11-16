@@ -114,26 +114,16 @@ internal static class CommandLine
             insecureOption,
             varOption,
         };
-        rootCommand.Validators.Add(commandResult =>
-        {
-            if (commandResult.GetValue(verboseOption) && commandResult.GetResult(showOption) is not null)
-            {
-                commandResult.AddError(Resources.VerboseAndShowTogether);
-            }
-        });
         rootCommand.SetAction((parseResult, actionCancellationToken) =>
         {
-            OutputMode? forcedMode = parseResult.GetValue(verboseOption)
-                ? OutputMode.Full
-                : ShowMode(parseResult.GetValue(showOption));
-
             RunOptions options = new(parseResult.GetRequiredValue(fileArgument))
             {
                 RequestName = parseResult.GetValue(nameOption),
                 EnvironmentName = parseResult.GetValue(envOption),
-                ForcedMode = forcedMode,
+                ForcedMode = ShowMode(parseResult.GetValue(showOption)),
                 Insecure = parseResult.GetValue(insecureOption),
                 Variables = ToVariables(parseResult.GetResult(varOption)),
+                Verbose = parseResult.GetValue(verboseOption),
             };
 
             return run(options, actionCancellationToken);

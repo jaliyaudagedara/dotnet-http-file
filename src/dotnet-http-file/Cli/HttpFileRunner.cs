@@ -11,10 +11,16 @@ namespace DotNetHttpFile.Cli;
 /// <summary>
 /// Runs one request of an <c>.http</c> file, after the requests it refers to.
 /// </summary>
+/// <param name="console">The streams the run writes to.</param>
+/// <param name="picker">Picks the request when none is named and a terminal can ask.</param>
+/// <param name="createProviders">Creates the secret providers of a run, given the run's diagnostic log.</param>
+/// <param name="createHandler">Creates the HTTP handler; the argument is true for <c>--insecure</c>.</param>
+/// <param name="timeProvider">The clock of the dynamic variables.</param>
+/// <param name="getEnvironmentVariable">Reads a process environment variable.</param>
 internal sealed class HttpFileRunner(
     ConsoleStreams console,
     IRequestPicker picker,
-    SecretProviderRegistry providers,
+    Func<DiagnosticLog, SecretProviderRegistry> createProviders,
     Func<bool, HttpMessageHandler> createHandler,
     TimeProvider timeProvider,
     Func<string, string?> getEnvironmentVariable)
@@ -46,6 +52,24 @@ internal sealed class HttpFileRunner(
     private static readonly CompositeFormat s_unexpectedErrorFormat =
         CompositeFormat.Parse(Resources.UnexpectedError);
 
+    private static readonly CompositeFormat s_verboseDecodedFormat = CompositeFormat.Parse(Resources.VerboseDecoded);
+
+    private static readonly CompositeFormat s_verboseDotEnvFileFormat =
+        CompositeFormat.Parse(Resources.VerboseDotEnvFile);
+
+    private static readonly CompositeFormat s_verboseEnvironmentFormat =
+        CompositeFormat.Parse(Resources.VerboseEnvironment);
+
+    private static readonly CompositeFormat s_verboseEnvironmentFileFormat =
+        CompositeFormat.Parse(Resources.VerboseEnvironmentFile);
+
+    private static readonly CompositeFormat s_verboseExchangeFormat =
+        CompositeFormat.Parse(Resources.VerboseExchange);
+
+    private static readonly CompositeFormat s_verboseHttpFileFormat = CompositeFormat.Parse(Resources.VerboseHttpFile);
+
+    private static readonly CompositeFormat s_verbosePlanFormat = CompositeFormat.Parse(Resources.VerbosePlan);
+
     /// <summary>
     /// Sends the request <paramref name="options"/> selects and writes the outcome to the console.
     /// </summary>
@@ -61,10 +85,11 @@ internal sealed class HttpFileRunner(
         OutputMode mode = options.ForcedMode ?? (console.IsOutputRedirected ? OutputMode.Body : OutputMode.Full);
         SecretMask secretMask = new();
         ResponseRenderer renderer = new(console, secretMask, mode);
+        DiagnosticLog log = new(console.Error, secretMask) { IsEnabled = options.Verbose };
 
         try
         {
-            return await RunCoreAsync(options, secretMask, renderer, cancellationToken).ConfigureAwait(false);
+            return await RunCoreAsync(options, secretMask, renderer, log, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -119,20 +144,30 @@ internal sealed class HttpFileRunner(
 
     private static async Task<DotEnvFile> LoadDotEnvAsync(
         string httpFilePath,
+        DiagnosticLog log,
         CancellationToken cancellationToken)
     {
         string fullPath = Path.GetFullPath(httpFilePath);
         string httpFileDirectory = Path.GetDirectoryName(fullPath) ?? fullPath;
         string directory = ProjectLocator.FindProjectDirectory(httpFileDirectory) ?? httpFileDirectory;
 
-        return await DotEnvFile.LoadAsync(Path.Combine(directory, DotEnvFileName), cancellationToken)
+        DotEnvFile dotEnv = await DotEnvFile.LoadAsync(Path.Combine(directory, DotEnvFileName), cancellationToken)
             .ConfigureAwait(false);
+
+        // A missing file is not read; the $dotenv error names the path.
+        if (dotEnv.Values is not null)
+        {
+            log.Write(Messages.Format(s_verboseDotEnvFileFormat, dotEnv.Path));
+        }
+
+        return dotEnv;
     }
 
     private async Task<int> RunCoreAsync(
         RunOptions options,
         SecretMask secretMask,
         ResponseRenderer renderer,
+        DiagnosticLog log,
         CancellationToken cancellationToken)
     {
         string filePath = options.FilePath;
@@ -141,23 +176,38 @@ internal sealed class HttpFileRunner(
             throw new HttpFileException(Messages.Format(s_fileNotFoundFormat, filePath));
         }
 
+        log.Write(Messages.Format(s_verboseHttpFileFormat, Path.GetFullPath(filePath)));
         HttpFile file = await ReadFilesAsync(() => HttpFileParser.LoadAsync(filePath, cancellationToken))
             .ConfigureAwait(false);
+
+        string? environmentFilePath = EnvironmentFileLocator.Find(filePath);
+        log.Write(environmentFilePath is null
+            ? Resources.VerboseNoEnvironmentFile
+            : Messages.Format(s_verboseEnvironmentFileFormat, environmentFilePath));
         EnvironmentSet environment = await ReadFilesAsync(() => EnvironmentLoader.LoadAsync(
-            EnvironmentFileLocator.Find(filePath),
+            environmentFilePath,
             options.EnvironmentName,
             filePath,
+            log.Write,
             cancellationToken)).ConfigureAwait(false);
+        log.Write(environment.SelectedName is null
+            ? Resources.VerboseNoEnvironment
+            : Messages.Format(s_verboseEnvironmentFormat, environment.SelectedName));
 
         RequestDefinition target = SelectRequest(file, options.RequestName);
         IReadOnlyList<RequestDefinition> plan = DependencyPlanner.Plan(file, target);
+        log.Write(Messages.Format(
+            s_verbosePlanFormat,
+            string.Join(
+                Messages.ListSeparator,
+                plan.Select(request => request.Name ?? request.Title ?? AsWritten(request)))));
 
         ExchangeStore exchanges = new();
         VariableResolver resolver = new(
             file,
             environment,
-            providers,
-            CreateDynamicVariables(filePath),
+            createProviders(log),
+            CreateDynamicVariables(filePath, log),
             exchanges,
             secretMask,
             options.Variables);
@@ -176,7 +226,7 @@ internal sealed class HttpFileRunner(
                     s_dependencyFailedFormat,
                     dependency.Name,
                     ResponseRenderer.StatusText(exchange.Response),
-                    target.Name ?? $"{target.Method} {target.Url.Raw}"));
+                    target.Name ?? AsWritten(target)));
 
                 return ExitCodes.ErrorStatus;
             }
@@ -198,7 +248,7 @@ internal sealed class HttpFileRunner(
             try
             {
                 response = await sender
-                    .SendAsync(resolved, warnings, cancellationToken: cancellationToken)
+                    .SendAsync(resolved, warnings, log.Write, cancellationToken)
                     .ConfigureAwait(false);
             }
             finally
@@ -209,6 +259,7 @@ internal sealed class HttpFileRunner(
                 }
             }
 
+            LogExchange(log, resolved, response);
             HttpExchange exchange = new(resolved, response);
             if (request.Name is not null)
             {
@@ -216,6 +267,26 @@ internal sealed class HttpFileRunner(
             }
 
             return exchange;
+        }
+    }
+
+    // The request line as the file has it: a variable in the URL is not expanded, so no value can show.
+    private static string AsWritten(RequestDefinition request) => $"{request.Method} {request.Url.Raw}";
+
+    private static void LogExchange(DiagnosticLog log, ResolvedRequest request, ReceivedResponse response)
+    {
+        log.Write(Messages.Format(
+            s_verboseExchangeFormat,
+            request.Method,
+            request.DisplayUrl,
+            ResponseRenderer.StatusText(response),
+            ResponseRenderer.Milliseconds(response)));
+
+        // A body in a coding that is not decoded keeps its warning instead.
+        IReadOnlyList<string> codings = response.ContentCodings;
+        if (codings.Count > 0 && response.UnsupportedCodings.Count == 0)
+        {
+            log.Write(Messages.Format(s_verboseDecodedFormat, string.Join(Messages.ListSeparator, codings)));
         }
     }
 
@@ -279,7 +350,7 @@ internal sealed class HttpFileRunner(
             : Messages.Format(s_multipleRequestsNoNameFormat, file.Path, requests.Count, nameList));
     }
 
-    private DynamicVariables CreateDynamicVariables(string httpFilePath)
+    private DynamicVariables CreateDynamicVariables(string httpFilePath, DiagnosticLog log)
     {
         // Kept as a task so that .env is read once however many expressions use it.
         Task<DotEnvFile>? dotEnv = null;
@@ -288,6 +359,7 @@ internal sealed class HttpFileRunner(
             timeProvider,
             Random.Shared,
             getEnvironmentVariable,
-            cancellationToken => dotEnv ??= ReadFilesAsync(() => LoadDotEnvAsync(httpFilePath, cancellationToken)));
+            cancellationToken => dotEnv ??= ReadFilesAsync(
+                () => LoadDotEnvAsync(httpFilePath, log, cancellationToken)));
     }
 }

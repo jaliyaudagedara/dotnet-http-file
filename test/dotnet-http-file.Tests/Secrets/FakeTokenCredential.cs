@@ -7,6 +7,13 @@ internal sealed class FakeTokenCredential(string token = FakeTokenCredential.Def
 {
     public const string DefaultToken = "token-1";
 
+    public DateTimeOffset ExpiresOn { get; init; } = DateTimeOffset.MaxValue;
+
+    /// <summary>
+    /// The credential type to report as DefaultAzureCredential does when it hands out a token, or null for none.
+    /// </summary>
+    public string? SelectedCredential { get; init; }
+
     public TokenRequestContext? RequestContext { get; private set; }
 
     public CancellationToken CancellationToken { get; private set; }
@@ -21,7 +28,12 @@ internal sealed class FakeTokenCredential(string token = FakeTokenCredential.Def
             throw failure;
         }
 
-        return new AccessToken(token, DateTimeOffset.MaxValue);
+        if (SelectedCredential is not null)
+        {
+            AzureIdentityEvents.RaiseCredentialSelected(SelectedCredential);
+        }
+
+        return new AccessToken(token, ExpiresOn);
     }
 
     public override ValueTask<AccessToken> GetTokenAsync(

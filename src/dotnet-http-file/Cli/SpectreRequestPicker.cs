@@ -44,6 +44,6 @@ internal sealed class SpectreRequestPicker(IAnsiConsole console) : IRequestPicke
             request.Url.Raw);
 
         // The URL is the text of the file as written, which can hold an escape sequence.
-        return ResponseRenderer.WithVisibleControlCharacters(label);
+        return ConsoleText.WithVisibleControlCharacters(label);
     }
 }

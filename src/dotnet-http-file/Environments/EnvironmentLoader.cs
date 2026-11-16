@@ -34,6 +34,9 @@ internal static class EnvironmentLoader
     private static readonly CompositeFormat s_invalidEnvironmentFileJsonFormat =
         CompositeFormat.Parse(Resources.InvalidEnvironmentFileJson);
 
+    private static readonly CompositeFormat s_verboseEnvironmentUserFileFormat =
+        CompositeFormat.Parse(Resources.VerboseEnvironmentUserFile);
+
     /// <summary>
     /// Loads the variables of <paramref name="environmentName"/> from the environment file at
     /// <paramref name="environmentFilePath"/> and its sibling <c>.user</c> file.
@@ -45,6 +48,7 @@ internal static class EnvironmentLoader
     /// <param name="environmentFilePath">The environment file, or null when none was found.</param>
     /// <param name="environmentName">The environment to select, or null for none.</param>
     /// <param name="httpFilePath">The <c>.http</c> file the search started from, named in the error.</param>
+    /// <param name="log">Receives a line naming the <c>.user</c> file when it is read.</param>
     /// <param name="cancellationToken">Cancels the file reads.</param>
     /// <exception cref="HttpFileException">
     /// An environment was named but there is no environment file or it does not define the environment, or
@@ -54,6 +58,7 @@ internal static class EnvironmentLoader
         string? environmentFilePath,
         string? environmentName,
         string httpFilePath,
+        Action<string>? log = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(httpFilePath);
@@ -75,6 +80,7 @@ internal static class EnvironmentLoader
         string userFilePath = environmentFilePath + UserFileSuffix;
         if (File.Exists(userFilePath))
         {
+            log?.Invoke(Messages.Format(s_verboseEnvironmentUserFileFormat, userFilePath));
             JsonObject userRoot = await ReadAsync(userFilePath, cancellationToken).ConfigureAwait(false);
             sourceFiles.Add(new SourceFile(userFilePath, userRoot));
         }

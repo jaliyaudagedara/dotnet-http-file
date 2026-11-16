@@ -1,11 +1,25 @@
+using System.Buffers.Text;
+using System.Globalization;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Azure.Core;
 using Azure.Identity;
+using DotNetHttpFile.Environments;
+using DotNetHttpFile.Output;
 
 namespace DotNetHttpFile.Secrets;
 
-internal sealed partial class EntraAccessTokenProvider(Lazy<TokenCredential> credential) : ISecretProvider
+/// <summary>
+/// Resolves a variable to a Microsoft Entra access token from the shared credential.
+/// </summary>
+/// <param name="credential">The credential the Azure providers share.</param>
+/// <param name="log">
+/// Receives the scope, tenant and expiry of each token and the credential that supplied it, never the token.
+/// </param>
+internal sealed partial class EntraAccessTokenProvider(Lazy<TokenCredential> credential, DiagnosticLog? log = null)
+    : ISecretProvider
 {
     public const string ProviderName = "EntraAccessToken";
 
@@ -13,6 +27,10 @@ internal sealed partial class EntraAccessTokenProvider(Lazy<TokenCredential> cre
     private const string TenantIdField = "tenantId";
     private const string LoginCommand = "az login";
     private const string LoginToTenantCommand = "az login --tenant ";
+    private const string TenantIdClaim = "tid";
+    private const char JwtSeparator = '.';
+    private const int JwtPartCount = 3;
+    private const string ExpiryFormat = "u";
 
     private static readonly CompositeFormat s_entraAccessTokenFailedFormat =
         CompositeFormat.Parse(Resources.EntraAccessTokenFailed);
@@ -22,6 +40,8 @@ internal sealed partial class EntraAccessTokenProvider(Lazy<TokenCredential> cre
 
     private static readonly CompositeFormat s_entraAccessTokenInvalidTenantIdFormat =
         CompositeFormat.Parse(Resources.EntraAccessTokenInvalidTenantId);
+
+    private static readonly CompositeFormat s_verboseTokenFormat = CompositeFormat.Parse(Resources.VerboseToken);
 
     public string Name => ProviderName;
 
@@ -45,9 +65,15 @@ internal sealed partial class EntraAccessTokenProvider(Lazy<TokenCredential> cre
 
         try
         {
-            AccessToken accessToken = await credential.Value
-                .GetTokenAsync(requestContext, cancellationToken)
-                .ConfigureAwait(false);
+            AccessToken accessToken;
+            using (AzureCredentialLog.Listen(log))
+            {
+                accessToken = await credential.Value
+                    .GetTokenAsync(requestContext, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            LogToken(scope, accessToken);
 
             return accessToken.Token;
         }
@@ -65,6 +91,46 @@ internal sealed partial class EntraAccessTokenProvider(Lazy<TokenCredential> cre
                     Environment.NewLine),
                 exception);
         }
+    }
+
+    // The tid claim of a JWT access token. The signature is not checked: the value is only shown, never trusted.
+    // InvalidOperationException is what reading a string with an unpaired surrogate escape throws.
+    private static string? TenantOf(string token)
+    {
+        string[] parts = token.Split(JwtSeparator);
+        if (parts.Length != JwtPartCount)
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonFile.TryParse(Base64Url.DecodeFromChars(parts[1]), out JsonNode? payload)
+                && payload is JsonObject claims
+                && claims[TenantIdClaim] is JsonValue tenant
+                && tenant.GetValueKind() == JsonValueKind.String
+                    ? tenant.GetValue<string>()
+                    : null;
+        }
+        catch (Exception exception)
+            when (exception is FormatException or JsonException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private void LogToken(string scope, AccessToken accessToken)
+    {
+        if (log is not { IsEnabled: true })
+        {
+            return;
+        }
+
+        log.Write(Messages.Format(
+            s_verboseTokenFormat,
+            scope,
+            TenantOf(accessToken.Token) ?? Resources.VerboseTokenTenantUnknown,
+            accessToken.ExpiresOn.ToUniversalTime().ToString(ExpiryFormat, CultureInfo.InvariantCulture)));
     }
 
     // Azure.Core's scope check for the developer-tool credentials allows only these characters, and the scope

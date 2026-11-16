@@ -283,7 +283,7 @@ public sealed class EnvironmentLoaderTests : IDisposable
             path,
             "dev",
             Path.Combine(captureDirectory, "env.http"),
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(environment.TryGetValue("Token", out EnvironmentValue? value));
         ProviderEnvironmentValue provider = Assert.IsType<ProviderEnvironmentValue>(value);
@@ -501,7 +501,44 @@ public sealed class EnvironmentLoaderTests : IDisposable
         string path = await WriteEnvironmentFileAsync(UserScenarioEnvironmentFile);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => EnvironmentLoader.LoadAsync(path, "dev", HttpFilePath, new CancellationToken(canceled: true)));
+            () => EnvironmentLoader.LoadAsync(
+                path,
+                "dev",
+                HttpFilePath,
+                cancellationToken: new CancellationToken(canceled: true)));
+    }
+
+    [Fact]
+    public async Task LoadAsync_UserFile_LogsItsPath()
+    {
+        string path = await WriteEnvironmentFileAsync(UserScenarioEnvironmentFile);
+        await WriteUserFileAsync(UserScenarioUserFile);
+        List<string> lines = [];
+
+        await EnvironmentLoader.LoadAsync(
+            path,
+            "dev",
+            HttpFilePath,
+            lines.Add,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal([$"Environment user file: {path}.user"], lines);
+    }
+
+    [Fact]
+    public async Task LoadAsync_NoUserFile_LogsNothing()
+    {
+        string path = await WriteEnvironmentFileAsync(UserScenarioEnvironmentFile);
+        List<string> lines = [];
+
+        await EnvironmentLoader.LoadAsync(
+            path,
+            "dev",
+            HttpFilePath,
+            lines.Add,
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(lines);
     }
 
     private static string? Literal(EnvironmentSet environment, string name) =>
@@ -514,7 +551,7 @@ public sealed class EnvironmentLoaderTests : IDisposable
             environmentFilePath,
             environmentName,
             HttpFilePath,
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
     private Task<string> WriteEnvironmentFileAsync(string content) =>
         _directory.WriteFileAsync(EnvironmentFileLocator.FileName, content, TestContext.Current.CancellationToken);

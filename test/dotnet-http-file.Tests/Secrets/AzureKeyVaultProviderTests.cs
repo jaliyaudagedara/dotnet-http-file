@@ -3,12 +3,15 @@ using Azure;
 using Azure.Core;
 using Azure.Identity;
 using Azure.Security.KeyVault.Secrets;
+using DotNetHttpFile.Output;
 using DotNetHttpFile.Secrets;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using Spectre.Console.Testing;
 
 namespace DotNetHttpFile.Tests.Secrets;
 
+[Collection(AzureIdentityEventGroup.Name)]
 public sealed class AzureKeyVaultProviderTests
 {
     private const string VariableName = "AKVSecret";
@@ -301,6 +304,28 @@ public sealed class AzureKeyVaultProviderTests
         Assert.Equal(new Uri($"https://{vaultName}.vault.azure.net/"), _vaultUri);
     }
 
+    [Fact]
+    public async Task ResolveAsync_LogEnabledCredentialSelected_LogsTheCredential()
+    {
+        ReturnSecretSelectingCredential("Azure.Identity.AzureCliCredential");
+        using TestConsole error = new();
+
+        await ResolveAsync(Definition(ResourceId), new DiagnosticLog(error) { IsEnabled = true });
+
+        Assert.Equal("verbose: Credential: AzureCliCredential", error.Output.TrimEnd());
+    }
+
+    [Fact]
+    public async Task ResolveAsync_LogDisabledCredentialSelected_WritesNothing()
+    {
+        ReturnSecretSelectingCredential("Azure.Identity.AzureCliCredential");
+        using TestConsole error = new();
+
+        await ResolveAsync(Definition(ResourceId), new DiagnosticLog(error));
+
+        Assert.Empty(error.Output);
+    }
+
     private static string Definition(string resourceId)
     {
         JsonObject definition = new()
@@ -321,6 +346,20 @@ public sealed class AzureKeyVaultProviderTests
             .Returns(Response.FromValue(secret, Substitute.For<Response>()));
     }
 
+    // The client gets its token inside GetSecretAsync, which is when DefaultAzureCredential reports the credential.
+    private void ReturnSecretSelectingCredential(string credentialType)
+    {
+        KeyVaultSecret secret = SecretModelFactory.KeyVaultSecret(new SecretProperties(SecretName), SecretValue);
+        _client
+            .GetSecretAsync(SecretName, null, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                AzureIdentityEvents.RaiseCredentialSelected(credentialType);
+
+                return Response.FromValue(secret, Substitute.For<Response>());
+            });
+    }
+
     private async Task<string> ResolveFailureMessageAsync(Exception failure)
     {
         _client.GetSecretAsync(SecretName, null, Arg.Any<CancellationToken>()).ThrowsAsync(failure);
@@ -331,10 +370,13 @@ public sealed class AzureKeyVaultProviderTests
         return exception.Message;
     }
 
-    private Task<string> ResolveAsync(string definitionJson) =>
-        ResolveWithTokenAsync(definitionJson, TestContext.Current.CancellationToken);
+    private Task<string> ResolveAsync(string definitionJson, DiagnosticLog? log = null) =>
+        ResolveWithTokenAsync(definitionJson, TestContext.Current.CancellationToken, log);
 
-    private Task<string> ResolveWithTokenAsync(string definitionJson, CancellationToken cancellationToken)
+    private Task<string> ResolveWithTokenAsync(
+        string definitionJson,
+        CancellationToken cancellationToken,
+        DiagnosticLog? log = null)
     {
         AzureKeyVaultProvider provider = new(
             new Lazy<TokenCredential>(_credential),
@@ -344,7 +386,8 @@ public sealed class AzureKeyVaultProviderTests
                 _clientCredential = credential;
 
                 return _client;
-            });
+            },
+            log);
 
         return provider.ResolveAsync(
             SecretRequestFactory.Create(VariableName, definitionJson),

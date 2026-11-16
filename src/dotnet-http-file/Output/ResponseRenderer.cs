@@ -5,7 +5,6 @@ using DotNetHttpFile.Execution;
 using DotNetHttpFile.Parsing;
 using DotNetHttpFile.Resolution;
 using Spectre.Console;
-using Spectre.Console.Rendering;
 
 namespace DotNetHttpFile.Output;
 
@@ -18,9 +17,6 @@ namespace DotNetHttpFile.Output;
 internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secretMask, OutputMode mode)
 {
     private const int VersionFieldCount = 2;
-    private const string ControlCharacterPrefix = @"\x";
-    private const string ControlCharacterFormat = "X2";
-    private const int HexDigitCount = 2;
     private const int BytesPerKilobyte = 1024;
     private const int BytesPerMegabyte = BytesPerKilobyte * BytesPerKilobyte;
 
@@ -81,7 +77,7 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         ReceivedResponse response = exchange.Response;
         if (mode == OutputMode.Body)
         {
-            WriteLines(console.Error, StatusLine(response), StatusStyle(response));
+            ConsoleText.WriteLines(console.Error, StatusLine(response), StatusStyle(response));
 
             await console.StandardOutput.WriteAsync(response.Body, cancellationToken).ConfigureAwait(false);
             await console.StandardOutput.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -89,7 +85,7 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
             return;
         }
 
-        WriteLines(console.Output, ProtocolStatusText(response), StatusStyle(response));
+        ConsoleText.WriteLines(console.Output, ProtocolStatusText(response), StatusStyle(response));
         if (mode == OutputMode.Headers)
         {
             WriteHeaders(console.Output, response);
@@ -104,7 +100,7 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        WriteLines(console.Error, message, s_dependencyStyle);
+        ConsoleText.WriteLines(console.Error, message, s_dependencyStyle);
     }
 
     /// <summary>
@@ -128,43 +124,18 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     }
 
     /// <summary>
-    /// Replaces every C0 and C1 control character and DEL with its code as text, so that what a server sent
-    /// or a file holds cannot move the cursor, clear the screen or set the window title. A tab and a line break
-    /// are kept; a carriage return that no line feed follows is replaced, because it would overwrite the line.
-    /// </summary>
-    internal static string WithVisibleControlCharacters(string text)
-    {
-        ArgumentNullException.ThrowIfNull(text);
-
-        StringBuilder? builder = null;
-        for (int index = 0; index < text.Length; index++)
-        {
-            char character = text[index];
-            bool isKept = !char.IsControl(character)
-                || character is '\t' or '\n'
-                || (character == '\r' && index + 1 < text.Length && text[index + 1] == '\n');
-
-            if (isKept)
-            {
-                builder?.Append(character);
-                continue;
-            }
-
-            builder ??= new StringBuilder(text, 0, index, text.Length + ControlCharacterPrefix.Length + HexDigitCount);
-            builder.Append(ControlCharacterPrefix)
-                .Append(((int)character).ToString(ControlCharacterFormat, CultureInfo.InvariantCulture));
-        }
-
-        return builder?.ToString() ?? text;
-    }
-
-    /// <summary>
     /// The status code of <paramref name="response"/>, followed by its reason phrase when it has one.
     /// </summary>
     internal static string StatusText(ReceivedResponse response) =>
         response.ReasonPhrase.Length == 0
             ? response.StatusCode.ToString(CultureInfo.InvariantCulture)
             : string.Create(CultureInfo.InvariantCulture, $"{response.StatusCode} {response.ReasonPhrase}");
+
+    /// <summary>
+    /// The time <paramref name="response"/> took, in whole milliseconds.
+    /// </summary>
+    internal static long Milliseconds(ReceivedResponse response) =>
+        (long)Math.Round(response.Elapsed.TotalMilliseconds, MidpointRounding.AwayFromZero);
 
     private static string BodyDisplayText(ReceivedResponse response)
     {
@@ -229,9 +200,6 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     private static string ProtocolStatusText(ReceivedResponse response) =>
         $"HTTP/{response.HttpVersion.ToString(VersionFieldCount)} {StatusText(response)}";
 
-    private static long Milliseconds(ReceivedResponse response) =>
-        (long)Math.Round(response.Elapsed.TotalMilliseconds, MidpointRounding.AwayFromZero);
-
     private static Style StatusStyle(ReceivedResponse response) =>
         response.StatusCode switch
         {
@@ -250,14 +218,11 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
             _ => string.Create(CultureInfo.InvariantCulture, $"{(double)byteCount / BytesPerMegabyte:F1} MB"),
         };
 
-    private static void WriteLines(IAnsiConsole target, string text, Style? style = null) =>
-        target.Write(new UnwrappedLines(WithVisibleControlCharacters(text), style));
-
     private static void WriteHeaders(IAnsiConsole target, ReceivedResponse response)
     {
         foreach (KeyValuePair<string, string> header in response.Headers)
         {
-            WriteLines(target, $"{header.Key}: {header.Value}");
+            ConsoleText.WriteLines(target, $"{header.Key}: {header.Value}");
         }
     }
 
@@ -273,15 +238,15 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
             WriteMaskedLines(output, $"{header.Key}: {RequestHeaderDisplayValue(header)}");
         }
 
-        WriteLines(output, string.Empty);
-        WriteLines(output, StatusLine(response), StatusStyle(response));
+        ConsoleText.WriteLines(output, string.Empty);
+        ConsoleText.WriteLines(output, StatusLine(response), StatusStyle(response));
         WriteHeaders(output, response);
-        WriteLines(output, string.Empty);
+        ConsoleText.WriteLines(output, string.Empty);
 
         string body = WithoutFinalLineBreak(BodyDisplayText(response));
         if (body.Length > 0)
         {
-            WriteLines(output, body);
+            ConsoleText.WriteLines(output, body);
         }
     }
 
@@ -289,35 +254,5 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     // Control characters are made visible after masking: a secret that holds one still matches as it was
     // registered, and text inserted after the match cannot become part of one.
     private void WriteMaskedLines(IAnsiConsole target, string text, Style? style = null) =>
-        WriteLines(target, secretMask.Apply(text), style);
-
-    /// <summary>
-    /// Text written with the line breaks it has and no others. Spectre's <see cref="Text"/> wraps at the console
-    /// width, which would break a header value or a body line that a piped capture must keep whole.
-    /// </summary>
-    private sealed class UnwrappedLines(string text, Style? style) : IRenderable
-    {
-        private readonly string[] _lines = text.Split('\n');
-
-        public Measurement Measure(RenderOptions options, int maxWidth)
-        {
-            int width = _lines.Max(line => new Segment(line).CellCount());
-
-            return new Measurement(width, width);
-        }
-
-        public IEnumerable<Segment> Render(RenderOptions options, int maxWidth)
-        {
-            foreach (string line in _lines)
-            {
-                string content = line.EndsWith('\r') ? line[..^1] : line;
-                if (content.Length > 0)
-                {
-                    yield return style is null ? new Segment(content) : new Segment(content, style.Value);
-                }
-
-                yield return Segment.LineBreak;
-            }
-        }
-    }
+        ConsoleText.WriteLines(target, secretMask.Apply(text), style);
 }
