@@ -1,9 +1,10 @@
 # Each request has a name (# @name), which --name selects and other requests refer to.
 
 @BaseUrl=https://jsonplaceholder.typicode.com
+@Limit=3
 
 # @name getToDos
-GET {{BaseUrl}}/todos?_limit=3
+GET {{BaseUrl}}/todos?_limit={{Limit}}
 
 ###
 

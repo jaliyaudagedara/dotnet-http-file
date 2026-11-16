@@ -21,7 +21,9 @@
     <File Path="docs/output.md" />
     <File Path="docs/syntax.md" />
   </Folder>
-  <Folder Name="/samples/" />
+  <Folder Name="/samples/">
+    <File Path="samples/README.md" />
+  </Folder>
   <Folder Name="/samples/Basics/">
     <File Path="samples/Basics/Named.http" />
     <File Path="samples/Basics/Titled.http" />
