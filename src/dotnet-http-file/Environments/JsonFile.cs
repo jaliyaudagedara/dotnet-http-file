@@ -10,6 +10,9 @@ namespace DotNetHttpFile.Environments;
 /// </summary>
 internal static class JsonFile
 {
+    // Never shown: callers report a JsonException with a message of their own.
+    private const string LoneSurrogateMessage = "A string holds half of a surrogate pair.";
+
     // JsonObject throws ArgumentException on a repeated name only when it is first read, so parsing refuses it.
     private static readonly JsonDocumentOptions s_documentOptions = new()
     {
@@ -20,12 +23,15 @@ internal static class JsonFile
 
     /// <summary>
     /// Parses <paramref name="bytes"/>, which may start with a UTF-8 byte order mark and hold comments and
-    /// trailing commas.
+    /// trailing commas. Every name and string of the document can be read as text afterwards.
     /// </summary>
     /// <returns>
     /// False when <paramref name="bytes"/> are not valid UTF-8.
     /// </returns>
-    /// <exception cref="JsonException">The text is not valid JSON, or an object repeats a property name.</exception>
+    /// <exception cref="JsonException">
+    /// The text is not valid JSON, an object repeats a property name, or a name or string escapes half of a
+    /// surrogate pair. The last is reported without a line number.
+    /// </exception>
     public static bool TryParse(ReadOnlySpan<byte> bytes, out JsonNode? root)
     {
         // The parser does not validate UTF-8 inside strings, so text in another encoding would parse and then
@@ -42,7 +48,15 @@ internal static class JsonFile
             bytes = bytes[Encoding.UTF8.Preamble.Length..];
         }
 
-        root = JsonNode.Parse(bytes, nodeOptions: null, s_documentOptions);
+        try
+        {
+            root = JsonNode.Parse(bytes, nodeOptions: null, s_documentOptions);
+            ReadStrings(root);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new JsonException(LoneSurrogateMessage, exception);
+        }
 
         return true;
     }
@@ -63,4 +77,33 @@ internal static class JsonFile
                     value.GetValue<JsonElement>().GetRawText(),
                 _ => null,
             };
+
+    // The parser takes a string that escapes a surrogate without its pair, and the string fails only when it is
+    // read, as InvalidOperationException from wherever that happens: in the parser for a name, which it compares
+    // with the others, and in a caller for a value. Reading every string here makes it a failure of the file.
+    private static void ReadStrings(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject properties:
+                foreach ((_, JsonNode? value) in properties)
+                {
+                    ReadStrings(value);
+                }
+
+                break;
+
+            case JsonArray items:
+                foreach (JsonNode? item in items)
+                {
+                    ReadStrings(item);
+                }
+
+                break;
+
+            case JsonValue value when value.GetValueKind() is JsonValueKind.String:
+                _ = value.GetValue<string>();
+                break;
+        }
+    }
 }

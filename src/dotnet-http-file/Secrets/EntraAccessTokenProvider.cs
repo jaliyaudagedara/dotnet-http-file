@@ -94,7 +94,6 @@ internal sealed partial class EntraAccessTokenProvider(Lazy<TokenCredential> cre
     }
 
     // The tid claim of a JWT access token. The signature is not checked: the value is only shown, never trusted.
-    // InvalidOperationException is what reading a string with an unpaired surrogate escape throws.
     private static string? TenantOf(string token)
     {
         string[] parts = token.Split(JwtSeparator);
@@ -112,8 +111,7 @@ internal sealed partial class EntraAccessTokenProvider(Lazy<TokenCredential> cre
                     ? tenant.GetValue<string>()
                     : null;
         }
-        catch (Exception exception)
-            when (exception is FormatException or JsonException or InvalidOperationException)
+        catch (Exception exception) when (exception is FormatException or JsonException)
         {
             return null;
         }

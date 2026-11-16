@@ -495,6 +495,20 @@ public sealed class EnvironmentLoaderTests : IDisposable
         Assert.Equal($"Environment file {path} is not valid JSON.", exception.Message);
     }
 
+    [Theory]
+    [InlineData("""{ "dev": { "City": "half a pair \ud800" } }""")]
+    [InlineData("""{ "dev": { "\ud800": "x" } }""")]
+    [InlineData("""{ "dev": { "Key": { "provider": "AzureKeyVault", "secretName": "\ud800" } } }""")]
+    [InlineData("""{ "other": { "City": "\udc00" }, "dev": { "City": "x" } }""")]
+    public async Task LoadAsync_StringWithEscapedLoneSurrogate_ThrowsInvalidJson(string content)
+    {
+        string path = await WriteEnvironmentFileAsync(content);
+
+        HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(() => LoadAsync(path, "dev"));
+
+        Assert.Equal($"Environment file {path} is not valid JSON.", exception.Message);
+    }
+
     [Fact]
     public async Task LoadAsync_CancelledToken_Throws()
     {

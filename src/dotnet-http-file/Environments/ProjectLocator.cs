@@ -11,7 +11,7 @@ internal static class ProjectLocator
 
     /// <summary>
     /// Finds the nearest folder that holds a project file, starting with <paramref name="startDirectory"/>
-    /// and then searching each parent folder.
+    /// and then searching each parent folder. A folder that cannot be listed is passed over.
     /// </summary>
     /// <returns>
     /// The full path of the project folder, or null when there is none.
@@ -24,7 +24,7 @@ internal static class ProjectLocator
         DirectoryInfo? directory = new(Path.GetFullPath(startDirectory));
         while (directory is not null)
         {
-            if (FindProjectFile(directory.FullName) is not null)
+            if (HoldsProjectFile(directory.FullName))
             {
                 return directory.FullName;
             }
@@ -55,5 +55,19 @@ internal static class ProjectLocator
             1 => projectFiles[0],
             _ => throw new HttpFileException(Messages.Format(s_multipleProjectFilesFormat, directory)),
         };
+    }
+
+    // A folder on the way up that the user may not list holds no project file as far as the search can tell,
+    // so the search goes on above it.
+    private static bool HoldsProjectFile(string directory)
+    {
+        try
+        {
+            return FindProjectFile(directory) is not null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 }

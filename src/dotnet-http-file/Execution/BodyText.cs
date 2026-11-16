@@ -72,7 +72,11 @@ internal static class BodyText
 
         try
         {
-            return Encoding.GetEncoding(mediaType.CharSet.Trim('"'));
+            string charset = mediaType.CharSet.Trim('"');
+
+            // Encoding.GetEncoding knows only the Unicode encodings, ASCII and Latin-1. The code pages are asked
+            // here instead of being registered, which would change Encoding.GetEncoding for the whole process.
+            return CodePagesEncodingProvider.Instance.GetEncoding(charset) ?? Encoding.GetEncoding(charset);
         }
         catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
         {

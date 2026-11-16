@@ -151,10 +151,13 @@ public sealed class BodyFormatterTests
         Assert.Equal(body, text);
     }
 
-    [Fact]
-    public void FormatForDisplay_Xml_Indents()
+    [Theory]
+    [InlineData("application/xml")]
+    [InlineData("text/xml")]
+    [InlineData("TEXT/XML; charset=utf-8")]
+    public void FormatForDisplay_Xml_Indents(string contentType)
     {
-        string text = Format("application/xml", "<root><item id=\"1\">a</item><empty/></root>");
+        string text = Format(contentType, "<root><item id=\"1\">a</item><empty/></root>");
 
         Assert.Equal($"<root>{s_newLine}  <item id=\"1\">a</item>{s_newLine}  <empty />{s_newLine}</root>", text);
     }
@@ -214,6 +217,21 @@ public sealed class BodyFormatterTests
         string text = BodyFormatter.FormatForDisplay("text/plain; charset=iso-8859-1", body);
 
         Assert.Equal("caf\u00E9", text);
+    }
+
+    [Theory]
+    [InlineData("windows-1252", new byte[] { 0x63, 0x61, 0x66, 0xE9 }, "caf\u00E9")]
+    [InlineData("\"Windows-1252\"", new byte[] { 0x80 }, "\u20AC")]
+    [InlineData("iso-8859-2", new byte[] { 0xB3 }, "\u0142")]
+    [InlineData("shift_jis", new byte[] { 0x93, 0xFA }, "\u65E5")]
+    public void FormatForDisplay_CodePageCharsetInContentType_DecodesWithIt(
+        string charset,
+        byte[] body,
+        string expected)
+    {
+        string text = BodyFormatter.FormatForDisplay($"text/plain; charset={charset}", body);
+
+        Assert.Equal(expected, text);
     }
 
     [Fact]

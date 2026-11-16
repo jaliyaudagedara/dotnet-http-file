@@ -20,6 +20,9 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     private const int BytesPerKilobyte = 1024;
     private const int BytesPerMegabyte = BytesPerKilobyte * BytesPerKilobyte;
 
+    // The decimals of the F1 format a size is written with.
+    private const int SizeDecimals = 1;
+
     // The characters of an RFC 9110 token, which is what an authentication scheme is made of.
     private static readonly SearchValues<char> s_tokenCharacters = SearchValues.Create(
         "!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
@@ -218,15 +221,23 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
             _ => s_failureStyle,
         };
 
-    private static string FormatSize(long byteCount) =>
-        byteCount switch
+    private static string FormatSize(long byteCount)
+    {
+        if (byteCount < BytesPerKilobyte)
         {
-            < BytesPerKilobyte => string.Create(CultureInfo.InvariantCulture, $"{byteCount} B"),
-            < BytesPerMegabyte => string.Create(
-                CultureInfo.InvariantCulture,
-                $"{(double)byteCount / BytesPerKilobyte:F1} KB"),
-            _ => string.Create(CultureInfo.InvariantCulture, $"{(double)byteCount / BytesPerMegabyte:F1} MB"),
-        };
+            return string.Create(CultureInfo.InvariantCulture, $"{byteCount} B");
+        }
+
+        // The unit is chosen for the number as printed: just under a megabyte would print as 1024.0 KB.
+        double kilobytes = Math.Round(
+            (double)byteCount / BytesPerKilobyte,
+            SizeDecimals,
+            MidpointRounding.AwayFromZero);
+
+        return kilobytes < BytesPerKilobyte
+            ? string.Create(CultureInfo.InvariantCulture, $"{kilobytes:F1} KB")
+            : string.Create(CultureInfo.InvariantCulture, $"{(double)byteCount / BytesPerMegabyte:F1} MB");
+    }
 
     private static void WriteHeaders(IAnsiConsole target, ReceivedResponse response)
     {

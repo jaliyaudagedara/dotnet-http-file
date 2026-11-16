@@ -340,7 +340,11 @@ public sealed class VisualStudioConformanceTests
 
     private sealed class UnexpectedPicker : IRequestPicker
     {
-        public RequestDefinition? Pick(IReadOnlyList<RequestDefinition> requests) =>
+        public bool CanPick => true;
+
+        public Task<RequestDefinition?> PickAsync(
+            IReadOnlyList<RequestDefinition> requests,
+            CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("The picker was not expected to run.");
     }
 

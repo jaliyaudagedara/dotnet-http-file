@@ -18,6 +18,9 @@ internal static partial class GraphQLRequest
     private const string QueryProperty = "query";
     private const string VariablesProperty = "variables";
     private const string OperationNameProperty = "operationName";
+    private const char OpeningBrace = '{';
+    private const char ClosingBrace = '}';
+    private const char StringQuote = '"';
 
     private static readonly CompositeFormat s_queryMissingFormat = CompositeFormat.Parse(Resources.GraphQLQueryMissing);
 
@@ -38,11 +41,15 @@ internal static partial class GraphQLRequest
     /// <param name="request">The resolved request, whose header lines are parallel to its headers.</param>
     /// <param name="line">The line of the request line, named in errors.</param>
     /// <remarks>
-    /// The body is split at its first blank line: the query comes before it and the variables, a JSON object,
-    /// after it.
+    /// The variables are the text after a blank line of the body that is a JSON object, trying the last blank
+    /// line first and then each one before it, so that variables may hold blank lines too. The query is the
+    /// text before that blank line. When no such text is a JSON object the whole body is the query, so a query
+    /// may hold blank lines of its own. Then a last block that starts as a JSON object does (a brace, then a
+    /// quote or the closing brace) is taken as variables with a mistake in them, and is an error.
     /// </remarks>
     /// <exception cref="HttpFileException">
-    /// The query is empty, or the variables are not a JSON object. The message never holds the body.
+    /// The query is empty, or the last block starts as a JSON object does and is not one. The message never holds
+    /// the body.
     /// </exception>
     public static ResolvedRequest Apply(ResolvedRequest request, int line)
     {
@@ -53,13 +60,12 @@ internal static partial class GraphQLRequest
             return request;
         }
 
-        (string query, string variables) = Split(request.Body ?? string.Empty);
+        (string query, JsonDocument? variables) = Split(request.Body ?? string.Empty, line);
+        using JsonDocument? variablesDocument = variables;
         if (query.Length == 0)
         {
             throw new HttpFileException(Messages.Format(s_queryMissingFormat, line));
         }
-
-        using JsonDocument? variablesDocument = ParseVariables(variables, line);
 
         List<KeyValuePair<string, string>> headers = [with(capacity: request.Headers.Count)];
         List<int> headerLines = [with(capacity: request.Headers.Count)];
@@ -94,39 +100,66 @@ internal static partial class GraphQLRequest
         HeaderNames.Is(header, MarkerHeader)
         && string.Equals(header.Value.Trim(), MarkerValue, StringComparison.OrdinalIgnoreCase);
 
-    private static (string Query, string Variables) Split(string body)
+    private static (string Query, JsonDocument? Variables) Split(string body, int line)
     {
-        Match blankLine = BlankLinePattern().Match(body);
+        // Only the end: a body that starts with a blank line has no query, and that must stay visible.
+        body = body.TrimEnd();
+        MatchCollection blankLines = BlankLinePattern().Matches(body);
 
-        return blankLine.Success
-            ? (body[..blankLine.Index].Trim(), body[(blankLine.Index + blankLine.Length)..])
-            : (body.Trim(), string.Empty);
+        // Variables can hold blank lines of their own, so each blank line is tried, from the last one back.
+        for (int index = blankLines.Count - 1; index >= 0; index--)
+        {
+            Match blankLine = blankLines[index];
+            JsonDocument? variables = ParseObject(TextAfter(body, blankLine));
+            if (variables is not null)
+            {
+                return (body[..blankLine.Index].Trim(), variables);
+            }
+        }
+
+        // A fragment, a second operation or an anonymous query after a blank line is part of the query. A last
+        // block that starts as a JSON object does is variables with a mistake in them, which sending it as
+        // GraphQL would hide.
+        if (blankLines.Count > 0 && StartsLikeJsonObject(TextAfter(body, blankLines[^1])))
+        {
+            throw new HttpFileException(Messages.Format(s_variablesNotObjectFormat, line));
+        }
+
+        return (body.TrimStart(), null);
     }
 
-    private static JsonDocument? ParseVariables(string variables, int line)
+    private static string TextAfter(string body, Match blankLine) => body[(blankLine.Index + blankLine.Length)..];
+
+    private static JsonDocument? ParseObject(string text)
     {
-        if (string.IsNullOrWhiteSpace(variables))
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(text, BodyText.JsonDocumentOptions);
+        }
+        catch (JsonException)
         {
             return null;
         }
 
-        JsonDocument document;
-        try
+        if (document.RootElement.ValueKind == JsonValueKind.Object)
         {
-            document = JsonDocument.Parse(variables, BodyText.JsonDocumentOptions);
-        }
-        catch (JsonException)
-        {
-            throw new HttpFileException(Messages.Format(s_variablesNotObjectFormat, line));
+            return document;
         }
 
-        if (document.RootElement.ValueKind != JsonValueKind.Object)
-        {
-            document.Dispose();
-            throw new HttpFileException(Messages.Format(s_variablesNotObjectFormat, line));
-        }
+        document.Dispose();
 
-        return document;
+        return null;
+    }
+
+    // A JSON object goes on from its brace with a quoted name or its closing brace. A GraphQL selection set goes
+    // on with a name or a spread.
+    private static bool StartsLikeJsonObject(ReadOnlySpan<char> text)
+    {
+        text = text.TrimStart();
+
+        return text is [OpeningBrace, ..]
+            && text[1..].TrimStart() is [StringQuote or ClosingBrace, ..];
     }
 
     private static string? OperationName(string query)

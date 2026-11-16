@@ -241,6 +241,8 @@ public sealed class AspnetUserSecretsProviderTests : IDisposable
     [InlineData("""{ "a": "value-from-user-secrets", "a": "value-from-user-secrets" }""")]
     [InlineData("""{ "config:ApiKeyDev": "value-from-user-secrets", "config": { "ApiKeyDev": "other" } }""")]
     [InlineData("""{ "config": { "ApiKeyDev": "value-from-user-secrets", "apikeydev": "other" } }""")]
+    [InlineData("""{ "config": { "ApiKeyDev": "value-from-user-secrets", "Other": "\ud800" } }""")]
+    [InlineData("""{ "config": { "ApiKeyDev": "value-from-user-secrets", "\udc00": "x" } }""")]
     public async Task ResolveAsync_UserSecretsFileInvalid_ThrowsWithoutValues(string secretsFile)
     {
         await WriteProjectFileAsync(ProjectFile);

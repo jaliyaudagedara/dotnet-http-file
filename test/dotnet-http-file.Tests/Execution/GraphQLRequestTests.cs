@@ -1,3 +1,5 @@
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using DotNetHttpFile.Execution;
 
 namespace DotNetHttpFile.Tests.Execution;
@@ -8,6 +10,11 @@ public sealed class GraphQLRequestTests
     private const int MarkerLine = 4;
 
     private static readonly Uri s_url = new("https://localhost:7128/graphql");
+
+    private static readonly JsonSerializerOptions s_relaxedJson = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 
     [Fact]
     public void Apply_NoMarker_ReturnsTheRequestUnchanged()
@@ -74,6 +81,104 @@ public sealed class GraphQLRequestTests
 
         string escapedLineBreak = lineBreak == "\n" ? "\\n" : "\\r";
         Assert.Equal($$$"""{"query":"query{{{escapedLineBreak}}}{ a }","variables":{}}""", applied.Body);
+    }
+
+    [Theory]
+    [MemberData(nameof(LineBreaks))]
+    public void Apply_BlankLineBeforeFragmentAndNoVariables_SendsTheWholeBodyAsTheQuery(string lineBreak)
+    {
+        string query = string.Join(
+            lineBreak,
+            "query Hero {",
+            "  hero { ...F }",
+            "}",
+            "",
+            "fragment F on Hero {",
+            "  name",
+            "}");
+        ResolvedRequest request = Marked(query + lineBreak);
+
+        ResolvedRequest applied = GraphQLRequest.Apply(request, RequestLine);
+
+        Assert.Equal(
+            JsonSerializer.Serialize(new { query, operationName = "Hero" }, s_relaxedJson),
+            applied.Body);
+    }
+
+    [Theory]
+    [MemberData(nameof(LineBreaks))]
+    public void Apply_BlankLineBeforeFragmentThenVariables_SplitsAtTheLastBlankLine(string lineBreak)
+    {
+        string query = string.Join(
+            lineBreak,
+            "query Hero($id: ID!) {",
+            "  hero(id: $id) { ...F }",
+            "}",
+            "",
+            "fragment F on Hero {",
+            "  name",
+            "}");
+        ResolvedRequest request = Marked(string.Join(lineBreak, query, "", "{", "  \"id\": \"1\"", "}", ""));
+
+        ResolvedRequest applied = GraphQLRequest.Apply(request, RequestLine);
+
+        Assert.Equal(
+            JsonSerializer.Serialize(
+                new
+                {
+                    query,
+                    variables = new { id = "1" },
+                    operationName = "Hero",
+                },
+                s_relaxedJson),
+            applied.Body);
+    }
+
+    [Fact]
+    public void Apply_JsonObjectsInTheLastTwoBlocks_TakesOnlyTheLastAsVariables()
+    {
+        ResolvedRequest request = Marked("{ a }\n\n{\"id\": 1}\n\n{\"id\": 2}");
+
+        ResolvedRequest applied = GraphQLRequest.Apply(request, RequestLine);
+
+        Assert.Equal("""{"query":"{ a }\n\n{\"id\": 1}","variables":{"id":2}}""", applied.Body);
+    }
+
+    [Theory]
+    [InlineData("{ a }\n\n\n{}")]
+    [InlineData("{ a }\n \n\t\n{}")]
+    [InlineData("{ a }\r\n\r\n\r\n{}\r\n")]
+    public void Apply_SeveralBlankLinesBeforeVariables_LeavesThemOutOfTheQuery(string body)
+    {
+        ResolvedRequest request = Marked(body);
+
+        ResolvedRequest applied = GraphQLRequest.Apply(request, RequestLine);
+
+        Assert.Equal("""{"query":"{ a }","variables":{}}""", applied.Body);
+    }
+
+    [Theory]
+    [MemberData(nameof(LineBreaks))]
+    public void Apply_BlankLineInsideTheVariables_TakesTheWholeObject(string lineBreak)
+    {
+        ResolvedRequest request = Marked(
+            string.Join(lineBreak, "{ a }", "", "{", "  \"a\": 1,", "", "  \"b\": 2", "}"));
+
+        ResolvedRequest applied = GraphQLRequest.Apply(request, RequestLine);
+
+        Assert.Equal("""{"query":"{ a }","variables":{"a":1,"b":2}}""", applied.Body);
+    }
+
+    [Theory]
+    [MemberData(nameof(LineBreaks))]
+    public void Apply_BlankLinesAfterTheVariables_AreIgnored(string lineBreak)
+    {
+        ResolvedRequest request = Marked(
+            string.Join(lineBreak, "{ a }  ", "", "{\"id\": 1}", "", "  ", "", ""));
+
+        ResolvedRequest applied = GraphQLRequest.Apply(request, RequestLine);
+
+        Assert.Equal("""{"query":"{ a }","variables":{"id":1}}""", applied.Body);
     }
 
     [Fact]
@@ -182,12 +287,16 @@ public sealed class GraphQLRequestTests
     }
 
     [Theory]
-    [InlineData("{ a }\n\n{\"token\": \"s3cret\"")]
-    [InlineData("{ a }\n\n[\"s3cret\"]")]
-    [InlineData("{ a }\n\n\"s3cret\"")]
     [InlineData("{ a }\n\n{\"id\": 1, \"id\": \"s3cret\"}")]
-    [InlineData("{ a }\n\n{\"id\": 1}\n\n{\"s3cret\": 2}")]
-    public void Apply_VariablesNotAJsonObject_ThrowsWithoutQuotingThem(string body)
+    [InlineData("{ a }\n\n{\"token\": \"s3cret\",}")]
+    [InlineData("{ a }\n\n{\"token\": s3cret}\n")]
+    [InlineData("{ a }\n\n{\"brace\": \"}\", \"quote\": \"\\\"}\", \"token\": s3cret}")]
+    [InlineData("{ a }\n\n{ \"id\": 1, }")]
+    [InlineData("{ a }\n\n{\"token\": \"s3cret\"")]
+    [InlineData("{ a }\n\n{\"id\": 1} {\"token\": \"s3cret\"}")]
+    [InlineData("{ a }\r\n\r\n  {\r\n  \"token\": s3cret\r\n}")]
+    [InlineData("{ a }\n\n{ } s3cret")]
+    public void Apply_LastBlockStartsLikeAJsonObjectButIsNotOne_ThrowsWithoutQuotingIt(string body)
     {
         ResolvedRequest request = Marked(body);
 
@@ -199,6 +308,27 @@ public sealed class GraphQLRequestTests
             + "cannot be sent.",
             exception.Message);
     }
+
+    [Theory]
+    [InlineData("fragment F on Hero { name }\n\n{ hero { ...F } }")]
+    [InlineData("fragment F on Hero { name }\r\n\r\n{\r\n  hero { ...F }\r\n}")]
+    [InlineData("# The hero of the film\n\n{ hero { name } }")]
+    [InlineData("fragment F on Query { a }\n\n{...F}")]
+    [InlineData("{ a }\n\n{ b } { c }")]
+    [InlineData("{ a }\n\n{ b }}")]
+    [InlineData("{ a }\n\n{")]
+    [InlineData("{ a }\n\n[\"id\"]")]
+    [InlineData("{ a }\n\n\"id\"")]
+    public void Apply_LastBlockDoesNotStartLikeAJsonObject_SendsTheWholeBodyAsTheQuery(string body)
+    {
+        ResolvedRequest request = Marked(body);
+
+        ResolvedRequest applied = GraphQLRequest.Apply(request, RequestLine);
+
+        Assert.Equal(JsonSerializer.Serialize(new { query = body }, s_relaxedJson), applied.Body);
+    }
+
+    public static TheoryData<string> LineBreaks() => ["\n", "\r", "\r\n"];
 
     private static ResolvedRequest Marked(string? body, params (string Name, string Value, int Line)[] headers) =>
         ResolvedRequestFactory.Create(

@@ -198,7 +198,8 @@ internal sealed class HttpFileRunner(
             ? Resources.VerboseNoEnvironment
             : Messages.Format(s_verboseEnvironmentFormat, environment.SelectedName));
 
-        RequestDefinition target = SelectRequest(file, options.RequestName);
+        RequestDefinition target = await SelectRequestAsync(file, options.RequestName, cancellationToken)
+            .ConfigureAwait(false);
         IReadOnlyList<RequestDefinition> plan = DependencyPlanner.Plan(file, target);
         log.Write(Messages.Format(
             s_verbosePlanFormat,
@@ -336,7 +337,10 @@ internal sealed class HttpFileRunner(
         return titled.SingleOrDefault();
     }
 
-    private RequestDefinition SelectRequest(HttpFile file, string? requestName)
+    private async Task<RequestDefinition> SelectRequestAsync(
+        HttpFile file,
+        string? requestName,
+        CancellationToken cancellationToken)
     {
         IReadOnlyList<RequestDefinition> requests = file.Requests;
         if (requests.Count == 0)
@@ -366,9 +370,10 @@ internal sealed class HttpFileRunner(
             return requests[0];
         }
 
-        if (!console.IsInputRedirected && !console.IsOutputRedirected)
+        if (!console.IsInputRedirected && !console.IsOutputRedirected && picker.CanPick)
         {
-            return picker.Pick(requests) ?? throw new HttpFileException(Resources.NoRequestSelected);
+            return await picker.PickAsync(requests, cancellationToken).ConfigureAwait(false)
+                ?? throw new HttpFileException(Resources.NoRequestSelected);
         }
 
         throw new HttpFileException(names.Length == 0

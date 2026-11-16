@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Mime;
-using System.Runtime.InteropServices;
 using System.Text;
 using Azure;
 using Azure.Core;
@@ -206,6 +205,27 @@ public sealed class HttpFileRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_ResponseCutShortInItsCoding_ReturnsErrorStatusAndPrintsOnlyTheError()
+    {
+        byte[] gzip = Compression.Gzip("""{"id": 17, "title": "Write blog post"}"""u8);
+        using Harness harness = new();
+        harness.CreateHandler = _ => new StubHandler((_, _) =>
+            Task.FromResult(GzipResponse(HttpStatusCode.OK, gzip[..(gzip.Length / 2)])));
+        string path = await harness.WriteHttpFileAsync("GET http://localhost/todos");
+
+        int exitCode = await harness.RunAsync(new RunOptions(path));
+
+        Assert.Equal(ExitCodes.ErrorStatus, exitCode);
+        Assert.Empty(harness.OutputLines);
+        Assert.Equal(
+            [
+                "error: Could not decode the response to GET http://localhost/todos (200): "
+                + "the body is not valid gzip data.",
+            ],
+            harness.ErrorLines);
+    }
+
+    [Fact]
     public async Task RunAsync_DependencyThatCannotBeDecoded_ReturnsErrorStatusAndSkipsTarget()
     {
         using Harness harness = new();
@@ -339,6 +359,64 @@ public sealed class HttpFileRunnerTests
 
         Assert.Equal(ExitCodes.NotSent, exitCode);
         Assert.Equal(["error: No request was selected."], harness.ErrorLines);
+        Assert.Equal(0, harness.HandlersCreated);
+    }
+
+    [Fact]
+    public async Task RunAsync_CancelledInPicker_ReturnsCancelled()
+    {
+        using CancellationTokenSource cancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        using Harness harness = new() { CancellationToken = cancellation.Token };
+        harness.Picker.Choose = _ =>
+        {
+            cancellation.Cancel();
+
+            return null;
+        };
+        string path = await harness.WriteHttpFileAsync(
+            """
+            GET http://localhost/a
+
+            ###
+
+            GET http://localhost/b
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path));
+
+        Assert.True(harness.Picker.SawCancellation);
+        Assert.Equal(ExitCodes.Cancelled, exitCode);
+        Assert.Equal(["error: cancelled"], harness.ErrorLines);
+        Assert.Equal(0, harness.HandlersCreated);
+    }
+
+    [Fact]
+    public async Task RunAsync_NoNameTerminalCannotShowPicker_ReturnsNotSentWithNames()
+    {
+        using Harness harness = new();
+        harness.Picker.CanPick = false;
+        string path = await harness.WriteHttpFileAsync(
+            """
+            # @name alpha
+            GET http://localhost/a
+
+            ###
+
+            GET http://localhost/b
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path));
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(
+            [
+                $"error: {path} has 2 requests; pick one with --name. Names and titles: alpha. "
+                    + "A request with neither a name nor a title can't be picked from a script; "
+                    + "add '# @name <name>' or '### <title>' above it.",
+            ],
+            harness.ErrorLines);
+        Assert.Empty(harness.Picker.Offered);
         Assert.Equal(0, harness.HandlersCreated);
     }
 
@@ -671,7 +749,7 @@ public sealed class HttpFileRunnerTests
         string path = await harness.WriteHttpFileAsync($"GET http://localhost/{ContentMarker}");
 
         int exitCode;
-        using (MakeUnreadable(path))
+        using (WithheldAccess.ToRead(path))
         {
             exitCode = await harness.RunAsync(new RunOptions(path));
         }
@@ -693,7 +771,7 @@ public sealed class HttpFileRunnerTests
         string path = await harness.WriteHttpFileAsync("GET {{host}}/a");
 
         int exitCode;
-        using (MakeUnreadable(environmentFilePath))
+        using (WithheldAccess.ToRead(environmentFilePath))
         {
             exitCode = await harness.RunAsync(new RunOptions(path) { EnvironmentName = "dev" });
         }
@@ -713,7 +791,7 @@ public sealed class HttpFileRunnerTests
         string path = await harness.WriteHttpFileAsync("GET http://localhost/todos/{{$dotenv TODO_ID}}");
 
         int exitCode;
-        using (MakeUnreadable(dotEnvPath))
+        using (WithheldAccess.ToRead(dotEnvPath))
         {
             exitCode = await harness.RunAsync(new RunOptions(path));
         }
@@ -1413,7 +1491,7 @@ public sealed class HttpFileRunnerTests
 
             { hero { name } }
 
-            [1, 2]
+            { "id": 1, }
             """);
 
         int exitCode = await harness.RunAsync(new RunOptions(path));
@@ -1807,19 +1885,6 @@ public sealed class HttpFileRunnerTests
         }
     }
 
-    // Windows refuses a second open of a file held without sharing; elsewhere the file loses its read permission.
-    private static IDisposable MakeUnreadable(string path)
-    {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            return new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-        }
-
-        File.SetUnixFileMode(path, UnixFileMode.None);
-
-        return new MemoryStream();
-    }
-
     private sealed class FakePicker : IRequestPicker
     {
         public Func<IReadOnlyList<RequestDefinition>, RequestDefinition?> Choose { get; set; } =
@@ -1827,11 +1892,23 @@ public sealed class HttpFileRunnerTests
 
         public IReadOnlyList<RequestDefinition> Offered { get; private set; } = [];
 
-        public RequestDefinition? Pick(IReadOnlyList<RequestDefinition> requests)
+        public bool CanPick { get; set; } = true;
+
+        /// <summary>
+        /// Whether the token the picker was given was cancelled when the choice had been made.
+        /// </summary>
+        public bool SawCancellation { get; private set; }
+
+        public Task<RequestDefinition?> PickAsync(
+            IReadOnlyList<RequestDefinition> requests,
+            CancellationToken cancellationToken = default)
         {
             Offered = requests;
+            RequestDefinition? chosen = Choose(requests);
+            SawCancellation = cancellationToken.IsCancellationRequested;
+            cancellationToken.ThrowIfCancellationRequested();
 
-            return Choose(requests);
+            return Task.FromResult(chosen);
         }
     }
 

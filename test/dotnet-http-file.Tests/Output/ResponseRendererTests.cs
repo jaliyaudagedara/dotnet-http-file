@@ -415,7 +415,10 @@ public sealed class ResponseRendererTests
     [InlineData(1023, "1023 B")]
     [InlineData(1024, "1.0 KB")]
     [InlineData(1536, "1.5 KB")]
-    [InlineData(1048575, "1024.0 KB")]
+    [InlineData(1280, "1.3 KB")]
+    [InlineData(1048524, "1023.9 KB")]
+    [InlineData(1048525, "1.0 MB")]
+    [InlineData(1048575, "1.0 MB")]
     [InlineData(1048576, "1.0 MB")]
     [InlineData(3774874, "3.6 MB")]
     public async Task RenderFull_BodySize_UsesBinaryUnitsWithOneDecimal(int length, string expected)

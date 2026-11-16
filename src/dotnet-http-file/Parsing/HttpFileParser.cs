@@ -8,11 +8,13 @@ internal static partial class HttpFileParser
 {
     private const char ByteOrderMark = '\uFEFF';
     private const string Separator = "###";
+    private const char SeparatorCharacter = '#';
     private const char HashComment = '#';
     private const string SlashComment = "//";
     private const char VariablePrefix = '@';
     private const char VariableAssignment = '=';
     private const char HeaderDelimiter = ':';
+    private const string HttpVersionPrefix = "HTTP/";
     private const string DefaultMethod = "GET";
     private const char Period = '.';
     private const int MaxEchoedLength = 32;
@@ -162,11 +164,6 @@ internal static partial class HttpFileParser
         RegexOptions.ExplicitCapture | RegexOptions.CultureInvariant)]
     private static partial Regex NameCommentPattern();
 
-    [GeneratedRegex(
-        @"^(?<target>.+?)(\s+(?<version>HTTP/\S+))?$",
-        RegexOptions.ExplicitCapture | RegexOptions.CultureInvariant)]
-    private static partial Regex RequestLinePattern();
-
     private static bool IsComment(string text) =>
         text.StartsWith(HashComment) || text.StartsWith(SlashComment, StringComparison.Ordinal);
 
@@ -211,7 +208,8 @@ internal static partial class HttpFileParser
 
     private static string? ParseTitle(string separatorLine)
     {
-        string title = separatorLine[Separator.Length..].Trim();
+        // "#### Title" is a separator too, so every '#' it starts with is left out of the title.
+        string title = separatorLine.TrimStart(SeparatorCharacter).Trim();
 
         return title.Length == 0 ? null : title;
     }
@@ -230,13 +228,11 @@ internal static partial class HttpFileParser
 
     private static RequestBuilder ParseRequestLine(string text, string? name, string? title, int line)
     {
-        Match match = RequestLinePattern().Match(text);
-        Group httpVersion = match.Groups["version"];
-        string target = match.Groups["target"].Value;
+        (string target, string? httpVersion) = SplitHttpVersion(text);
         string method = DefaultMethod;
         string url = target;
 
-        int methodEnd = IndexOfWhiteSpaceOutsideExpressions(target);
+        int methodEnd = WhiteSpaceOutsideExpressions(target).FirstOrDefault(-1);
         if (methodEnd >= 0)
         {
             method = target[..methodEnd];
@@ -248,19 +244,29 @@ internal static partial class HttpFileParser
             url = target[methodEnd..].TrimStart();
         }
 
-        return new RequestBuilder(
-            name,
-            title,
-            method,
-            ParseTemplate(url, line),
-            httpVersion.Success ? httpVersion.Value : null,
-            line);
+        return new RequestBuilder(name, title, method, ParseTemplate(url, line), httpVersion, line);
+    }
+
+    // The version is the last token of the line when it starts with "HTTP/" and names something after it.
+    private static (string Target, string? HttpVersion) SplitHttpVersion(string text)
+    {
+        int separator = WhiteSpaceOutsideExpressions(text).LastOrDefault(-1);
+        if (separator < 0)
+        {
+            return (text, null);
+        }
+
+        string lastToken = text[(separator + 1)..];
+        bool isHttpVersion = lastToken.Length > HttpVersionPrefix.Length
+            && lastToken.StartsWith(HttpVersionPrefix, StringComparison.Ordinal);
+
+        return isHttpVersion ? (text[..separator].TrimEnd(), lastToken) : (text, null);
     }
 
     // Whitespace inside {{...}} belongs to the URL, so "https://host/{{$randomInt 1 9}}" has no method.
     // An expression is what Template.Parse takes as one: a "{{" with no "}}" after it is plain text, and in
     // "{{a {{b}}" only "{{b}}" is an expression, and "\{{a b}}" is plain text.
-    private static int IndexOfWhiteSpaceOutsideExpressions(string text)
+    private static IEnumerable<int> WhiteSpaceOutsideExpressions(string text)
     {
         for (int index = 0; index < text.Length; index++)
         {
@@ -281,11 +287,9 @@ internal static partial class HttpFileParser
             }
             else if (char.IsWhiteSpace(text[index]))
             {
-                return index;
+                yield return index;
             }
         }
-
-        return -1;
     }
 
     private static HeaderDefinition ParseHeader(string text, int line)

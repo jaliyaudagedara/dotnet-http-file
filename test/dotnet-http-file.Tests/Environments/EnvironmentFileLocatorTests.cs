@@ -1,4 +1,5 @@
 using DotNetHttpFile.Environments;
+using DotNetHttpFile.Tests.Support;
 
 namespace DotNetHttpFile.Tests.Environments;
 
@@ -91,6 +92,22 @@ public sealed class EnvironmentFileLocatorTests : IDisposable
         Assert.Equal(
             $"More than one project file was found in {Path.Combine(_directory.DirectoryPath, "project")}.",
             exception.Message);
+    }
+
+    [Fact]
+    public async Task FindProjectDirectory_FolderOnTheWayUpCannotBeListed_SearchesPastIt()
+    {
+        await WriteAsync(Path.Combine("project", "Api.csproj"), EmptyProjectFile);
+        string unlistable = _directory.CreateDirectory(Path.Combine("project", "unlistable"));
+        string start = _directory.CreateDirectory(Path.Combine("project", "unlistable", "start"));
+
+        string? found;
+        using (WithheldAccess.ToList(unlistable))
+        {
+            found = ProjectLocator.FindProjectDirectory(start);
+        }
+
+        Assert.Equal(Path.Combine(_directory.DirectoryPath, "project"), found);
     }
 
     [Fact]

@@ -97,6 +97,7 @@ internal static class BodyFormatter
 
     private static bool IsXml(string mediaType) =>
         mediaType.Equals(MediaTypeNames.Application.Xml, StringComparison.OrdinalIgnoreCase)
+        || mediaType.Equals(MediaTypeNames.Text.Xml, StringComparison.OrdinalIgnoreCase)
         || mediaType.EndsWith(XmlSuffix, StringComparison.OrdinalIgnoreCase);
 
     private static string? IndentJson(string text)

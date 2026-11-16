@@ -13,7 +13,14 @@ internal sealed class SpectreRequestPicker(IAnsiConsole console) : IRequestPicke
     private const string ColumnSeparator = "  ";
     private const int NoSelection = -1;
 
-    public RequestDefinition? Pick(IReadOnlyList<RequestDefinition> requests)
+    /// <summary>
+    /// Gets whether the console has both capabilities Spectre asks of it before it shows a list.
+    /// </summary>
+    public bool CanPick => console.Profile.Capabilities is { Interactive: true, Ansi: true };
+
+    public async Task<RequestDefinition?> PickAsync(
+        IReadOnlyList<RequestDefinition> requests,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(requests);
 
@@ -25,7 +32,20 @@ internal sealed class SpectreRequestPicker(IAnsiConsole console) : IRequestPicke
             .AddChoices(Enumerable.Range(0, requests.Count))
             .AddCancelResult(NoSelection);
 
-        int selected = console.Prompt(prompt);
+        int selected;
+        try
+        {
+            selected = await prompt.ShowAsync(console, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Spectre hides the cursor for the list and shows it again only when the list ends with a key. It
+            // also leaves the cursor at the end of the last choice, where the error would be written.
+            console.Cursor.Show();
+            console.WriteLine();
+
+            throw;
+        }
 
         return selected == NoSelection ? null : requests[selected];
     }
