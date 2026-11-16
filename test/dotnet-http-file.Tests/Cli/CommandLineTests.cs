@@ -610,7 +610,7 @@ public sealed class CommandLineTests
         await harness.InvokeAsync("--help");
 
         Assert.Contains(
-            "Values are not masked; put secrets in the environment file.",
+            "Values are not masked; for a secret, use a secret provider in the environment file.",
             harness.Output.Output,
             StringComparison.Ordinal);
     }
