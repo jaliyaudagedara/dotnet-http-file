@@ -125,8 +125,8 @@
     <comment>{0} is the variable name. {1} is the provider name. {2} is the name of the required JSON property that is absent, empty or not a string.</comment>
   </data>
   <data name="SecretFieldInvalid" xml:space="preserve">
-    <value>Variable '{0}' ({1}) has an invalid '{2}'. Expected a non-empty string.</value>
-    <comment>{0} is the variable name. {1} is the provider name. {2} is the name of the optional JSON property that is present but empty or not a string. A string in the wrong shape has its own message. The value is left out.</comment>
+    <value>Variable '{0}' ({1}) has an invalid '{2}'. Expected a string that is not blank.</value>
+    <comment>{0} is the variable name. {1} is the provider name. {2} is the name of the optional JSON property that is present but blank or not a string. A string in the wrong shape has its own message. The value is left out.</comment>
   </data>
   <data name="EntraAccessTokenInvalidScope" xml:space="preserve">
     <value>Variable '{0}' (EntraAccessToken) has an invalid 'scope'. Expected a single scope made of letters, digits and . - : _ / (for example api://my-api/.default).</value>
@@ -137,7 +137,7 @@
     <comment>{0} is the variable name. tenantId is a literal JSON property name and is not translated. The value is left out because it would be printed to the terminal as written.</comment>
   </data>
   <data name="EntraAccessTokenFailed" xml:space="preserve">
-    <value>{0} (EntraAccessToken): could not get an access token.{5}  scope:  {1}{5}  tenant: {2}{5}  tried:  {3}{5}  fix:    {4}</value>
+    <value>Variable '{0}' (EntraAccessToken): could not get an access token.{5}  scope:  {1}{5}  tenant: {2}{5}  tried:  {3}{5}  fix:    {4}</value>
     <comment>{0} is the variable name. {1} is the scope. {2} is the tenant ID, or the EntraAccessTokenDefaultTenant text. {3} is the message of the credential failure. {4} is the command that fixes it. {5} is the line break. The labels are padded so the values line up; keep the two leading spaces and the alignment.</comment>
   </data>
   <data name="EntraAccessTokenDefaultTenant" xml:space="preserve">
@@ -165,7 +165,7 @@
     <comment>{0} is the variable name. {1} is the vault name. {2} is the secret name. Used when the request got no HTTP response. resourceId is a literal JSON property name and is not translated.</comment>
   </data>
   <data name="KeyVaultSignInFailed" xml:space="preserve">
-    <value>{0} (AzureKeyVault): could not sign in to read secret '{2}' from vault '{1}'.{4}  tried:  {3}{4}  fix:    az login</value>
+    <value>Variable '{0}' (AzureKeyVault): could not sign in to read secret '{2}' from vault '{1}'.{4}  tried:  {3}{4}  fix:    az login</value>
     <comment>{0} is the variable name. {1} is the vault name. {2} is the secret name. {3} is the message of the credential failure. {4} is the line break. az login is a command and is not translated. The layout matches EntraAccessTokenFailed, without the scope and tenant lines because the provider takes neither; keep the two leading spaces and the alignment.</comment>
   </data>
   <data name="UserSecretsNoProject" xml:space="preserve">
@@ -284,6 +284,10 @@
     <value>Header '{0}' ignored: a request without a body cannot have content headers (line {1}).</value>
     <comment>{0} is the header name, such as Content-Type. {1} is the line number of the header. A warning; the wording follows Visual Studio's HTTP0009. The header value is left out because it can hold a secret.</comment>
   </data>
+  <data name="DroppedContentType" xml:space="preserve">
+    <value>Content-Type on line {0} not sent: the request has no body.</value>
+    <comment>{0} is the line number of the Content-Type header. A line of the verbose log, not a warning. The header value is left out because it can hold a secret.</comment>
+  </data>
   <data name="HeaderNotSendable" xml:space="preserve">
     <value>Header '{0}' is not a valid HTTP header and cannot be sent (line {1}).</value>
     <comment>{0} is the header name. {1} is the line number of the header. The header value is left out because it can hold a secret.</comment>
@@ -298,7 +302,7 @@
   </data>
   <data name="GraphQLVariablesNotObject" xml:space="preserve">
     <value>The GraphQL variables of the request on line {0} are not a JSON object; the request cannot be sent.</value>
-    <comment>{0} is the line number of the request line. Used when the text after the first blank line of the body is not valid JSON or is JSON other than an object. GraphQL and JSON are not translated. The variables are left out because they can hold a secret.</comment>
+    <comment>{0} is the line number of the request line. Used when no text after a blank line of the body is a JSON object and the text after a blank line starts as one does: a brace, then a quote or the closing brace. GraphQL and JSON are not translated. The variables are left out because they can hold a secret.</comment>
   </data>
   <data name="UnsupportedHttpVersion" xml:space="preserve">
     <value>'{0}' is not a supported HTTP version. Use HTTP/1.0, HTTP/1.1, HTTP/2 or HTTP/3.</value>
@@ -314,7 +318,7 @@
   </data>
   <data name="Redirected" xml:space="preserve">
     <value>Redirected to {0} ({1})</value>
-    <comment>{0} is the URL a redirect leads to, with provider-resolved values shown as ***. {1} is the status code of the redirect, such as 302. Written to standard error once for each redirect that is followed.</comment>
+    <comment>{0} is the URL a redirect leads to, as the server sent it; provider-resolved values are shown as *** when the URL takes parts of the request URL. {1} is the status code of the redirect, such as 302. Written to standard error once for each redirect that is followed.</comment>
   </data>
   <data name="SendTimedOut" xml:space="preserve">
     <value>{0} {1} timed out after {2} s.</value>
@@ -340,10 +344,6 @@
     <value>(binary body, {0}; use --show body to write it)</value>
     <comment>{0} is the body size with its unit, such as 1.5 KB. Used when the response has no Content-Type. --show body is a literal option with its value and is not translated.</comment>
   </data>
-  <data name="BodyContainsSecret" xml:space="preserve">
-    <value>the response body contains a secret value from this run; it is written unmasked.</value>
-    <comment>A warning, shown after "warning: " when the response body is written as received and holds a value that came from a secret provider.</comment>
-  </data>
   <data name="OutputError" xml:space="preserve">
     <value>error: {0}</value>
     <comment>{0} is the error message, which ends with its own punctuation.</comment>
@@ -351,6 +351,62 @@
   <data name="OutputWarning" xml:space="preserve">
     <value>warning: {0}</value>
     <comment>{0} is the warning message, which ends with its own punctuation.</comment>
+  </data>
+  <data name="OutputVerbose" xml:space="preserve">
+    <value>verbose: {0}</value>
+    <comment>{0} is a line of the --verbose log. The prefix tells the log apart from warnings and errors on standard error.</comment>
+  </data>
+  <data name="VerboseHttpFile" xml:space="preserve">
+    <value>HTTP file: {0}</value>
+    <comment>A line of the --verbose log. {0} is the full path of the .http file that is read.</comment>
+  </data>
+  <data name="VerboseEnvironmentFile" xml:space="preserve">
+    <value>Environment file: {0}</value>
+    <comment>A line of the --verbose log. {0} is the full path of the http-client.env.json file that was found. http-client.env.json is a file name and is not translated.</comment>
+  </data>
+  <data name="VerboseEnvironmentUserFile" xml:space="preserve">
+    <value>Environment user file: {0}</value>
+    <comment>A line of the --verbose log. {0} is the full path of the http-client.env.json.user file that is read next to the environment file. The file name is not translated.</comment>
+  </data>
+  <data name="VerboseDotEnvFile" xml:space="preserve">
+    <value>.env file: {0}</value>
+    <comment>A line of the --verbose log. {0} is the full path of the .env file that $dotenv reads. .env and $dotenv are literal names and are not translated. The values in the file are never shown.</comment>
+  </data>
+  <data name="VerboseNoEnvironmentFile" xml:space="preserve">
+    <value>Environment file: none</value>
+    <comment>A line of the --verbose log, written when no http-client.env.json file was found.</comment>
+  </data>
+  <data name="VerboseEnvironment" xml:space="preserve">
+    <value>Environment: {0}</value>
+    <comment>A line of the --verbose log. {0} is the environment chosen with --env.</comment>
+  </data>
+  <data name="VerboseNoEnvironment" xml:space="preserve">
+    <value>Environment: none</value>
+    <comment>A line of the --verbose log, written when no environment was chosen with --env.</comment>
+  </data>
+  <data name="VerbosePlan" xml:space="preserve">
+    <value>Plan: {0}</value>
+    <comment>A line of the --verbose log. {0} is the list of requests in the order they are sent, the selected request last, each by its name or title, or by its method and URL as written in the file.</comment>
+  </data>
+  <data name="VerboseExchange" xml:space="preserve">
+    <value>{0} {1} -&gt; {2} in {3} ms</value>
+    <comment>A line of the --verbose log for each request sent. {0} is the HTTP method, {1} the URL with provider-resolved values shown as ***, {2} the status code and reason phrase of the response, such as 200 OK, and {3} the time in milliseconds. ms is the unit symbol.</comment>
+  </data>
+  <data name="VerboseDecoded" xml:space="preserve">
+    <value>Decoded: {0}</value>
+    <comment>A line of the --verbose log. {0} is the list of content codings, such as gzip, that the response body was decoded from.</comment>
+  </data>
+  <data name="VerboseToken" xml:space="preserve">
+    <value>Token for {0}: tenant {1}, expires {2}</value>
+    <comment>A line of the --verbose log for each access token acquired. The token itself is never shown. {0} is the scope, {1} the tenant ID the token was issued by, {2} the expiry time in UTC.</comment>
+  </data>
+  <data name="VerboseTokenTenantUnknown" xml:space="preserve">
+    <value>unknown</value>
+    <comment>Stands for {1} of VerboseToken when the tenant cannot be read from the token.</comment>
+  </data>
+  <data name="VerboseCredentialSelected" xml:space="preserve">
+    <value>Credential: {0}</value>
+    <comment>A line of the --verbose log. {0} is the type name of the Azure credential that supplied the token, such as AzureCliCredential, and is not translated.</comment>
   </data>
   <data name="CommandDescription" xml:space="preserve">
     <value>Runs a request from a Visual Studio .http file.</value>
@@ -361,28 +417,40 @@
     <comment>The --help description of the file argument. .http and .rest are file extensions and are not translated.</comment>
   </data>
   <data name="NameOptionDescription" xml:space="preserve">
-    <value>The request to run, as named by '# @name &lt;name&gt;' in the file.</value>
-    <comment>The --help description of --name. # @name is literal .http syntax and is not translated.</comment>
+    <value>The request to run, as named by '# @name &lt;name&gt;' or titled by '### &lt;title&gt;' in the file.</value>
+    <comment>The --help description of --name. # @name and ### are literal .http syntax and is not translated.</comment>
   </data>
   <data name="EnvOptionDescription" xml:space="preserve">
     <value>The environment in http-client.env.json to take variables from.</value>
     <comment>The --help description of --env. http-client.env.json is a file name and is not translated.</comment>
   </data>
   <data name="VerboseOptionDescription" xml:space="preserve">
-    <value>Same as --show full.</value>
-    <comment>The --help description of --verbose. --show full is a literal option with its value and is not translated.</comment>
+    <value>Logs what the tool does to standard error: files read, requests sent, tokens acquired (never their value).</value>
+    <comment>The --help description of --verbose.</comment>
   </data>
   <data name="ShowOptionDescription" xml:space="preserve">
-    <value>What to print: full (request, status, headers and formatted body, with secrets masked), headers (status line and response headers, masked), status (status line only), or body (the response body with gzip and deflate decoded, not masked, control characters not neutralised). Default: full in a terminal, body when the output is piped or redirected.</value>
+    <value>What to print: full (the request with secrets masked, then the status, headers and formatted body as received), headers (status line and response headers), status (status line only), or body (the response body with gzip and deflate decoded, control characters not neutralised). Default: full in a terminal, body when the output is piped or redirected.</value>
     <comment>The --help description of --show. full, headers, status and body are literal option values and are not translated.</comment>
   </data>
   <data name="InsecureOptionDescription" xml:space="preserve">
-    <value>Skip server certificate validation.</value>
-    <comment>The --help description of --insecure.</comment>
+    <value>Skips server certificate validation.</value>
+    <comment>The --help description of --insecure. In the third person, like the other option descriptions that start with a verb.</comment>
   </data>
-  <data name="VerboseAndShowTogether" xml:space="preserve">
-    <value>--verbose and --show cannot be used together.</value>
-    <comment>--verbose and --show are literal option names and are not translated.</comment>
+  <data name="VarOptionDescription" xml:space="preserve">
+    <value>Sets a variable for this run, over the file and the environment. Can be repeated. Values are not masked; for a secret, use a secret provider in the environment file.</value>
+    <comment>The --help description of --var.</comment>
+  </data>
+  <data name="VarOptionInvalid" xml:space="preserve">
+    <value>--var '{0}' is not name=value.</value>
+    <comment>--var is a literal option name and is not translated. {0} is the text of the --var argument before its first '=', which is not a valid variable name. The text after the '=' is never shown because it can be a secret.</comment>
+  </data>
+  <data name="VarOptionNeedsNameValue" xml:space="preserve">
+    <value>--var needs name=value.</value>
+    <comment>--var is a literal option name and is not translated. Shown when a --var has no argument, or its argument has no '=' or nothing before it. The argument is not shown because it can be a secret.</comment>
+  </data>
+  <data name="VarOptionNotUsed" xml:space="preserve">
+    <value>--var '{0}' is not used in {1}; variable names are case-sensitive.</value>
+    <comment>--var is a literal option name and is not translated. {0} is the variable name given to --var, which no {{name}} in the file refers to. {1} is the path of the .http file. The value is never shown because it can be a secret.</comment>
   </data>
   <data name="FileNotFound" xml:space="preserve">
     <value>File '{0}' was not found.</value>
@@ -401,20 +469,24 @@
     <comment>{0} is the operating system's message for the failed read, which names the path and ends with its own punctuation. The file content is never part of it.</comment>
   </data>
   <data name="RequestNameNotFound" xml:space="preserve">
-    <value>No request named '{0}' in {1}. Named requests: {2}.</value>
-    <comment>{0} is the name given to --name. {1} is the path of the .http file. {2} is the comma-separated list of request names in the file.</comment>
+    <value>No request named or titled '{0}' in {1}. Names and titles: {2}.</value>
+    <comment>{0} is the name given to --name. {1} is the path of the .http file. {2} is the comma-separated list of the request names and the ### titles in the file.</comment>
   </data>
   <data name="RequestNameNotFoundNoneNamed" xml:space="preserve">
-    <value>No request named '{0}' in {1}, which has no named requests.</value>
-    <comment>{0} is the name given to --name. {1} is the path of the .http file.</comment>
+    <value>No request named or titled '{0}' in {1}, which has no named or titled requests.</value>
+    <comment>{0} is the name given to --name. {1} is the path of the .http file. A title is the text after ### on the separator line above a request.</comment>
+  </data>
+  <data name="RequestTitleAmbiguous" xml:space="preserve">
+    <value>More than one request is titled '{0}' (lines {1}). Give one a '# @name'.</value>
+    <comment>{0} is the name given to --name, which matches the title of more than one request. {1} is the comma-separated list of the line numbers of those requests. # @name is literal and is not translated.</comment>
   </data>
   <data name="MultipleRequestsNoName" xml:space="preserve">
-    <value>{0} has {1} requests; pick one with --name. Named requests: {2}. Requests without a name can't be picked from a script; add '# @name &lt;name&gt;' above them.</value>
-    <comment>{0} is the path of the .http file. {1} is the number of requests, always two or more. {2} is the comma-separated list of request names. --name and # @name are literal and are not translated.</comment>
+    <value>{0} has {1} requests; pick one with --name. Names and titles: {2}. A request with neither a name nor a title can't be picked from a script; add '# @name &lt;name&gt;' or '### &lt;title&gt;' above it.</value>
+    <comment>{0} is the path of the .http file. {1} is the number of requests, always two or more. {2} is the comma-separated list of request names and ### titles. --name, # @name and ### are literal and are not translated.</comment>
   </data>
   <data name="MultipleRequestsNoneNamed" xml:space="preserve">
-    <value>{0} has {1} requests and none has a name; add '# @name &lt;name&gt;' above one and pick it with --name.</value>
-    <comment>{0} is the path of the .http file. {1} is the number of requests, always two or more. --name and # @name are literal and are not translated.</comment>
+    <value>{0} has {1} requests and none has a name or title; add '# @name &lt;name&gt;' or '### &lt;title&gt;' above one and pick it with --name.</value>
+    <comment>{0} is the path of the .http file. {1} is the number of requests, always two or more. --name, # @name and ### are literal and are not translated.</comment>
   </data>
   <data name="NoRequests" xml:space="preserve">
     <value>{0} has no requests.</value>
@@ -426,15 +498,19 @@
   </data>
   <data name="DependencyFailed" xml:space="preserve">
     <value>Dependency '{0}' returned {1}; '{2}' was not sent.</value>
-    <comment>{0} is the name of the request that was sent first. {1} is its status code and reason phrase, such as 404 Not Found. {2} is the name of the selected request, or its method and URL when it has no name.</comment>
+    <comment>{0} is the name of the request that was sent first. {1} is its status code and reason phrase, such as 404 Not Found. {2} is the name of the selected request, else its ### title, else its method and URL as written in the file. ### is literal and is not translated.</comment>
   </data>
   <data name="Cancelled" xml:space="preserve">
-    <value>cancelled</value>
+    <value>Cancelled.</value>
     <comment>Shown after 'error: ' when the run is stopped with Ctrl+C.</comment>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
-    <value>unexpected {0}: {1}</value>
+    <value>Unexpected {0}: {1}</value>
     <comment>Shown after 'error: ' for a failure the tool did not foresee. {0} is the .NET exception type name. {1} is the exception message, or for an AggregateException the comma-separated type names of the exceptions it holds.</comment>
+  </data>
+  <data name="WrongTenantHint" xml:space="preserve">
+    <value>The token is for another tenant. Set "tenantId" on the EntraAccessToken variable, or run with AZURE_TOKEN_CREDENTIALS=AzureCliCredential to use only the Azure CLI's sign-in.</value>
+    <comment>Shown after a 401 response with InvalidAuthenticationTokenTenant to a request that used an EntraAccessToken variable. "tenantId" is the name of a field in the environment file and EntraAccessToken is a provider name; AZURE_TOKEN_CREDENTIALS=AzureCliCredential is an environment variable setting, and AzureCliCredential is a credential name; none of these are translated.</comment>
   </data>
   <data name="PickerTitle" xml:space="preserve">
     <value>Select a request to run</value>

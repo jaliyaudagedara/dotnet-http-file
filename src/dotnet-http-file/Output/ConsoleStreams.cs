@@ -2,7 +2,9 @@ using Spectre.Console;
 
 namespace DotNetHttpFile.Output;
 
-/// <summary>The streams a run writes to.</summary>
+/// <summary>
+/// The streams a run writes to.
+/// </summary>
 /// <param name="StandardOutput">The raw standard output, which takes response bytes without any encoding.</param>
 /// <param name="Output">The console over standard output.</param>
 /// <param name="Error">The console over standard error.</param>

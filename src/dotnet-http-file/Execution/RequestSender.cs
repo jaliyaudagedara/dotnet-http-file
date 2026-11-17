@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Net.Http.Headers;
 using System.Security.Authentication;
 using System.Text;
@@ -7,7 +6,9 @@ using DotNetHttpFile.Resolution;
 
 namespace DotNetHttpFile.Execution;
 
-/// <summary>Sends requests and follows the redirects they are answered with.</summary>
+/// <summary>
+/// Sends requests and follows the redirects they are answered with.
+/// </summary>
 /// <param name="httpClient">The client to send through. Its handler must not follow redirects itself.</param>
 /// <param name="secretMask">The provider-resolved values of the run.</param>
 /// <param name="reportRedirect">Receives a message for each redirect that is followed.</param>
@@ -40,9 +41,10 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
     /// </summary>
     /// <param name="request">The request to send.</param>
     /// <param name="warnings">
-    /// Receives a message for each header that is left out of the request, and one when the body is in a coding
-    /// that is not decoded.
+    /// Receives a message for each header that is left out of the request, apart from <c>Content-Type</c>, and one
+    /// when the body is in a coding that is not decoded.
     /// </param>
+    /// <param name="log">Receives the diagnostic lines of the first send, not of a redirect that follows.</param>
     /// <param name="cancellationToken">The caller's token.</param>
     /// <returns>
     /// The final response, with the headers as received (one entry per value), the body decoded, and the time from
@@ -61,6 +63,7 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
     public async Task<ReceivedResponse> SendAsync(
         ResolvedRequest request,
         ICollection<string> warnings,
+        Action<string>? log = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -78,7 +81,8 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
                 // A redirect that drops the body leaves its content headers behind, which is not worth a warning.
                 using HttpRequestMessage message = RequestMessageBuilder.Build(
                     current,
-                    redirectCount == 0 ? warnings : []);
+                    redirectCount == 0 ? warnings : [],
+                    redirectCount == 0 ? log : null);
 
                 // ResponseContentRead buffers the body inside the call, so the timeout covers reading it.
                 using HttpResponseMessage response = await httpClient
@@ -91,7 +95,7 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
                     : null;
                 if (next is not null)
                 {
-                    reportRedirect(Format(s_redirectedFormat, next.DisplayUrl, (int)response.StatusCode));
+                    reportRedirect(Messages.Format(s_redirectedFormat, next.DisplayUrl, (int)response.StatusCode));
                     current = next;
                     continue;
                 }
@@ -113,9 +117,13 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
             // Only the caller and the timeout can cancel a send, and the caller did not.
-            throw new HttpFileException(
-                Format(s_sendTimedOutFormat, current.Method, current.DisplayUrl, httpClient.Timeout.TotalSeconds),
-                exception);
+            string text = Messages.Format(
+                s_sendTimedOutFormat,
+                current.Method,
+                current.DisplayUrl,
+                httpClient.Timeout.TotalSeconds);
+
+            throw new HttpFileException(text, exception);
         }
         catch (OperationCanceledException exception)
         {
@@ -126,12 +134,12 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
         {
             // For a TLS failure the outer message only says to look at the inner one.
             string text = exception.InnerException is AuthenticationException authenticationException
-                ? Format(
+                ? Messages.Format(
                     s_sendFailedCertificateNotTrustedFormat,
                     current.Method,
                     current.DisplayUrl,
                     authenticationException.Message)
-                : Format(s_sendFailedFormat, current.Method, current.DisplayUrl, exception.Message);
+                : Messages.Format(s_sendFailedFormat, current.Method, current.DisplayUrl, exception.Message);
 
             throw new HttpFileException(text, exception);
         }
@@ -152,11 +160,11 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
         IReadOnlyList<string> unsupportedCodings = response.UnsupportedCodings;
         if (unsupportedCodings.Count > 0)
         {
-            warnings.Add(Format(
+            warnings.Add(Messages.Format(
                 s_responseNotDecodedFormat,
                 request.Method,
                 request.DisplayUrl,
-                string.Join(", ", unsupportedCodings)));
+                string.Join(Messages.ListSeparator, unsupportedCodings)));
 
             return response;
         }
@@ -195,7 +203,7 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
         string coding,
         Exception? innerException = null) =>
         new(
-            Format(
+            Messages.Format(
                 format,
                 request.Method,
                 request.DisplayUrl,
@@ -227,7 +235,4 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
             }
         }
     }
-
-    private static string Format(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
-        string.Format(CultureInfo.CurrentCulture, format, arguments);
 }

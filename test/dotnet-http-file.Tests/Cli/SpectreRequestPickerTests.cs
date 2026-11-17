@@ -14,44 +14,106 @@ public sealed class SpectreRequestPickerTests
     private static readonly RequestDefinition s_second = Request(null, "POST", "https://localhost/[red]items[/]");
 
     [Fact]
-    public void Pick_EnterOnTheFirstChoice_ReturnsTheFirstRequest()
+    public async Task PickAsync_EnterOnTheFirstChoice_ReturnsTheFirstRequest()
     {
         using TestConsole console = InteractiveConsole(ConsoleKey.Enter);
 
-        RequestDefinition? picked = new SpectreRequestPicker(console).Pick([s_first, s_second]);
+        RequestDefinition? picked = await PickAsync(console, s_first, s_second);
 
         Assert.Same(s_first, picked);
     }
 
     [Fact]
-    public void Pick_DownThenEnter_ReturnsTheSecondRequest()
+    public async Task PickAsync_DownThenEnter_ReturnsTheSecondRequest()
     {
         using TestConsole console = InteractiveConsole(ConsoleKey.DownArrow, ConsoleKey.Enter);
 
-        RequestDefinition? picked = new SpectreRequestPicker(console).Pick([s_first, s_second]);
+        RequestDefinition? picked = await PickAsync(console, s_first, s_second);
 
         Assert.Same(s_second, picked);
     }
 
     [Fact]
-    public void Pick_Escape_ReturnsNull()
+    public async Task PickAsync_Escape_ReturnsNull()
     {
         using TestConsole console = InteractiveConsole(ConsoleKey.Escape);
 
-        RequestDefinition? picked = new SpectreRequestPicker(console).Pick([s_first, s_second]);
+        RequestDefinition? picked = await PickAsync(console, s_first, s_second);
 
         Assert.Null(picked);
     }
 
     [Fact]
-    public void Pick_LabelWithMarkupCharacters_PrintsThemLiterally()
+    public async Task PickAsync_LabelWithMarkupCharacters_PrintsThemLiterally()
     {
         using TestConsole console = InteractiveConsole(ConsoleKey.Enter);
 
-        new SpectreRequestPicker(console).Pick([s_first, s_second]);
+        await PickAsync(console, s_first, s_second);
 
         Assert.Contains("todos  GET  {{host}}/v1/todos", console.Output, StringComparison.Ordinal);
         Assert.Contains("-  POST  https://localhost/[red]items[/]", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PickAsync_CancelledToken_Throws()
+    {
+        using TestConsole console = InteractiveConsole();
+        SpectreRequestPicker picker = new(console);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => picker.PickAsync([s_first, s_second], new CancellationToken(canceled: true)));
+    }
+
+    [Fact]
+    public async Task PickAsync_CancelledToken_ShowsTheCursorAgainOnALineOfItsOwn()
+    {
+        using TestConsole console = InteractiveConsole().EmitAnsiSequences();
+        SpectreRequestPicker picker = new(console);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => picker.PickAsync([s_first, s_second], new CancellationToken(canceled: true)));
+
+        Assert.EndsWith($"{Escape}[?25h{Environment.NewLine}", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PickAsync_PromptFails_ShowsTheCursorAgainOnALineOfItsOwn()
+    {
+        using TestConsole console = InteractiveConsole().EmitAnsiSequences();
+        SpectreRequestPicker picker = new(console);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => picker.PickAsync([s_first, s_second], TestContext.Current.CancellationToken));
+
+        Assert.EndsWith($"{Escape}[?25h{Environment.NewLine}", console.Output, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, false, false)]
+    public void CanPick_Terminal_NeedsInteractionAndAnsi(bool isInteractive, bool supportsAnsi, bool expected)
+    {
+        using TestConsole console = new TestConsole().SupportsAnsi(supportsAnsi);
+        console.Profile.Capabilities.Interactive = isInteractive;
+
+        bool canPick = new SpectreRequestPicker(console).CanPick;
+
+        Assert.Equal(expected, canPick);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task PickAsync_TerminalThatCannotPick_IsRefusedBySpectre(bool isInteractive, bool supportsAnsi)
+    {
+        using TestConsole console = new TestConsole().SupportsAnsi(supportsAnsi);
+        console.Profile.Capabilities.Interactive = isInteractive;
+        SpectreRequestPicker picker = new(console);
+
+        await Assert.ThrowsAsync<NotSupportedException>(
+            () => picker.PickAsync([s_first, s_second], TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -64,6 +126,16 @@ public sealed class SpectreRequestPickerTests
         Assert.Equal(expected, label);
     }
 
+    [Theory]
+    [InlineData("todos", "List", "todos  GET  {{host}}/v1/todos")]
+    [InlineData(null, "List", "List  GET  {{host}}/v1/todos")]
+    public void Label_RequestWithTitle_ShowsNameBeforeTitle(string? name, string title, string expected)
+    {
+        RequestDefinition request = Request(name, "GET", "{{host}}/v1/todos") with { Title = title };
+
+        Assert.Equal(expected, SpectreRequestPicker.Label(request));
+    }
+
     [Fact]
     public void Label_UrlWithControlCharacters_MakesThemVisible()
     {
@@ -73,19 +145,22 @@ public sealed class SpectreRequestPickerTests
     }
 
     [Fact]
-    public void Pick_LabelWithControlCharacters_DoesNotWriteThem()
+    public async Task PickAsync_LabelWithControlCharacters_DoesNotWriteThem()
     {
         using TestConsole console = InteractiveConsole(ConsoleKey.Enter);
         RequestDefinition request = Request("clear", "GET", $"http://localhost/{Escape}[2J");
 
-        new SpectreRequestPicker(console).Pick([request, s_first]);
+        await PickAsync(console, request, s_first);
 
         Assert.Contains(@"http://localhost/\x1B[2J", console.Output, StringComparison.Ordinal);
         Assert.DoesNotContain($"{Escape}[2J", console.Output, StringComparison.Ordinal);
     }
 
     private static RequestDefinition Request(string? name, string method, string url) =>
-        new(name, method, Template.Parse(url), HttpVersion: null, Headers: [], Body: null, Line: 1);
+        new(method, Template.Parse(url), Headers: [], Line: 1) { Name = name };
+
+    private static Task<RequestDefinition?> PickAsync(TestConsole console, params RequestDefinition[] requests) =>
+        new SpectreRequestPicker(console).PickAsync(requests, TestContext.Current.CancellationToken);
 
     private static TestConsole InteractiveConsole(params ConsoleKey[] keys)
     {

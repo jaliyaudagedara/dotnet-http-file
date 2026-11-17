@@ -18,8 +18,6 @@ public sealed class ResponseRendererTests
     private const string TextContentType = "text/plain";
     private const string ToDosUrl = "https://localhost:7128/v1/todos";
     private const string Secret = "s3cr3t-value";
-    private const string InnerSecret = "admin";
-    private const string PasswordPart = "hunter2pw";
     private const char Escape = (char)0x1B;
     private const char MiddleDot = (char)0xB7;
 
@@ -112,40 +110,37 @@ public sealed class ResponseRendererTests
     }
 
     [Fact]
-    public async Task RenderFull_ProviderSecretAnywhere_IsMasked()
+    public async Task RenderFull_SecretInRequestAndResponse_MasksOnlyTheRequest()
     {
         using Harness harness = new(OutputMode.Full);
         harness.SecretMask.Add(Secret);
         HttpExchange exchange = new(
-            Request(headers: [new("X-Api-Key", Secret)]),
+            Request(displayUrl: $"{ToDosUrl}?key={Secret}", headers: [new("X-Api-Key", Secret)]),
             new ReceivedResponse(
                 new Version(1, 1),
                 401,
                 $"Bad key {Secret}",
-                [new(ContentTypeHeader, TextContentType), new("X-Echo", Secret)],
-                Encoding.UTF8.GetBytes($"key {Secret} refused"),
+                [new(ContentTypeHeader, JsonContentType), new("Location", $"{ToDosUrl}?key={Secret}")],
+                Encoding.UTF8.GetBytes($$"""{"key":"{{Secret}}"}"""),
                 TimeSpan.FromMilliseconds(5)));
 
         await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
 
-        Assert.DoesNotContain(Secret, harness.Output.Output, StringComparison.Ordinal);
-        Assert.Contains("X-Api-Key: ***", harness.OutputLines);
-        Assert.Contains("X-Echo: ***", harness.OutputLines);
-        Assert.Contains("key *** refused", harness.OutputLines);
-        Assert.StartsWith("HTTP/1.1 401 Bad key ***   5 ms", harness.OutputLines[3], StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RenderFull_SecretEscapedInJsonBody_IsMaskedAfterFormatting()
-    {
-        const string AccentedSecret = "tok\u00E9n-value";
-        using Harness harness = new(OutputMode.Full);
-        harness.SecretMask.Add(AccentedSecret);
-        HttpExchange exchange = new(Request(), Response(JsonContentType, """["tok\u00E9n-value"]"""u8.ToArray()));
-
-        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
-
-        Assert.Equal(["[", "  \"***\"", "]"], harness.OutputLines[^3..]);
+        Assert.Equal(
+            [
+                $"GET {ToDosUrl}?key=***",
+                "X-Api-Key: ***",
+                "",
+                $"HTTP/1.1 401 Bad key {Secret}   5 ms {MiddleDot} 22 B",
+                $"Content-Type: {JsonContentType}",
+                $"Location: {ToDosUrl}?key={Secret}",
+                "",
+                "{",
+                $"  \"key\": \"{Secret}\"",
+                "}",
+            ],
+            harness.OutputLines);
+        Assert.Empty(harness.ErrorLines);
     }
 
     [Fact]
@@ -257,14 +252,14 @@ public sealed class ResponseRendererTests
     }
 
     [Fact]
-    public void RenderNotice_Message_GoesToStandardErrorMaskedWithVisibleControlCharacters()
+    public void RenderRedirect_Message_GoesToStandardErrorAsGivenWithVisibleControlCharacters()
     {
         using Harness harness = new(OutputMode.Full);
         harness.SecretMask.Add("s3cret");
 
-        harness.Renderer.RenderNotice("Redirected to http://localhost/a?key=s3cret\u001B[2J (302)");
+        harness.Renderer.RenderRedirect("Redirected to http://localhost/a?key=s3cret\u001B[2J (302)");
 
-        Assert.Equal(["Redirected to http://localhost/a?key=***\\x1B[2J (302)"], harness.ErrorLines);
+        Assert.Equal(["Redirected to http://localhost/a?key=s3cret\\x1B[2J (302)"], harness.ErrorLines);
         Assert.Empty(harness.OutputLines);
     }
 
@@ -335,7 +330,7 @@ public sealed class ResponseRendererTests
 
         string[] lines = writer.ToString().Split(Environment.NewLine);
         Assert.True(spectreConsole.Profile.Width < longLine.Length);
-        Assert.Contains("X-Long: " + longLine, lines);
+        Assert.Contains($"{Escape}[36mX-Long{Escape}[0m: " + longLine, lines);
         Assert.Contains(longLine, lines);
     }
 
@@ -373,9 +368,9 @@ public sealed class ResponseRendererTests
     public async Task RenderFull_RequestWithBody_DoesNotPrintRequestBody()
     {
         using Harness harness = new(OutputMode.Full);
-        ResolvedRequest request = new("POST", new Uri(ToDosUrl), HttpVersion: null, [], "request-body-text")
+        ResolvedRequest request = new("POST", new Uri(ToDosUrl), [], ToDosUrl)
         {
-            DisplayUrl = ToDosUrl,
+            Body = "request-body-text",
         };
 
         await harness.Renderer.RenderAsync(
@@ -420,7 +415,10 @@ public sealed class ResponseRendererTests
     [InlineData(1023, "1023 B")]
     [InlineData(1024, "1.0 KB")]
     [InlineData(1536, "1.5 KB")]
-    [InlineData(1048575, "1024.0 KB")]
+    [InlineData(1280, "1.3 KB")]
+    [InlineData(1048524, "1023.9 KB")]
+    [InlineData(1048525, "1.0 MB")]
+    [InlineData(1048575, "1.0 MB")]
     [InlineData(1048576, "1.0 MB")]
     [InlineData(3774874, "3.6 MB")]
     public async Task RenderFull_BodySize_UsesBinaryUnitsWithOneDecimal(int length, string expected)
@@ -461,7 +459,7 @@ public sealed class ResponseRendererTests
     }
 
     [Fact]
-    public async Task RenderBody_SecretInBodyAndReasonPhrase_MasksOnlyTheStatusLine()
+    public async Task RenderBody_SecretInBodyAndReasonPhrase_WritesBothAsReceived()
     {
         byte[] body = Encoding.UTF8.GetBytes($"echo {Secret}");
         using Harness harness = new(OutputMode.Body);
@@ -479,57 +477,7 @@ public sealed class ResponseRendererTests
         await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
 
         Assert.Equal(body, harness.StandardOutput.ToArray());
-        Assert.Equal(
-            [
-                "HTTP/1.1 200 ***   12 ms \u00B7 17 B",
-                "warning: the response body contains a secret value from this run; it is written unmasked.",
-            ],
-            harness.ErrorLines);
-    }
-
-    [Fact]
-    public async Task RenderBody_SecretInJsonFormInBody_WarnsAndWritesBytesUnchanged()
-    {
-        const string QuotedSecret = "pa\"ss\\word";
-        byte[] body = Encoding.UTF8.GetBytes("""{"echo":"pa\"ss\\word"}""");
-        using Harness harness = new(OutputMode.Body);
-        harness.SecretMask.Add(QuotedSecret);
-
-        await harness.Renderer.RenderAsync(
-            new HttpExchange(Request(), Response(JsonContentType, body)),
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(body, harness.StandardOutput.ToArray());
-        Assert.Equal(
-            "warning: the response body contains a secret value from this run; it is written unmasked.",
-            harness.ErrorLines[^1]);
-    }
-
-    [Fact]
-    public async Task RenderBody_SecretNotInBody_DoesNotWarn()
-    {
-        using Harness harness = new(OutputMode.Body);
-        harness.SecretMask.Add(Secret);
-
-        await harness.Renderer.RenderAsync(
-            new HttpExchange(Request(), Response(JsonContentType, "[1]"u8.ToArray())),
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(["HTTP/1.1 200 OK   12 ms \u00B7 3 B"], harness.ErrorLines);
-    }
-
-    [Fact]
-    public async Task RenderFull_SecretInBody_DoesNotWarn()
-    {
-        using Harness harness = new(OutputMode.Full);
-        harness.SecretMask.Add(Secret);
-
-        await harness.Renderer.RenderAsync(
-            new HttpExchange(Request(), Response(TextContentType, Encoding.UTF8.GetBytes($"echo {Secret}"))),
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal("echo ***", harness.OutputLines[^1]);
-        Assert.Empty(harness.ErrorLines);
+        Assert.Equal([$"HTTP/1.1 200 {Secret}   12 ms \u00B7 17 B"], harness.ErrorLines);
     }
 
     [Fact]
@@ -549,7 +497,7 @@ public sealed class ResponseRendererTests
     }
 
     [Fact]
-    public async Task RenderStatus_SecretAndEscapeSequenceInReasonPhrase_MasksAndPrintsItAsText()
+    public async Task RenderStatus_SecretAndEscapeSequenceInReasonPhrase_PrintsItAsReceivedAsText()
     {
         using Harness harness = new(OutputMode.Status);
         harness.SecretMask.Add(Secret);
@@ -565,11 +513,11 @@ public sealed class ResponseRendererTests
 
         await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
 
-        Assert.Equal([@"HTTP/2.0 404 ***\x1B[2J"], harness.OutputLines);
+        Assert.Equal([$@"HTTP/2.0 404 {Secret}\x1B[2J"], harness.OutputLines);
     }
 
     [Fact]
-    public async Task RenderHeaders_Response_WritesStatusLineAndMaskedHeadersToOutput()
+    public async Task RenderHeaders_Response_WritesStatusLineAndHeadersAsReceivedToOutput()
     {
         using Harness harness = new(OutputMode.Headers);
         harness.SecretMask.Add(Secret);
@@ -593,7 +541,7 @@ public sealed class ResponseRendererTests
             [
                 "HTTP/1.1 200 OK",
                 "Content-Type: application/json; charset=utf-8",
-                "X-Echo: key=***",
+                $"X-Echo: key={Secret}",
                 @"X-Title: \x1B]0;owned",
             ],
             harness.OutputLines);
@@ -686,6 +634,182 @@ public sealed class ResponseRendererTests
     }
 
     [Fact]
+    public async Task RenderFull_ColourEnabled_StylesHeaderNamesAndBoldsTheRequestLine()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        HttpExchange exchange = new(
+            Request(headers: [new("Accept", "application/json")]),
+            Response(JsonContentType, "[1]"u8.ToArray()));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        string[] lines = harness.OutputLines;
+        Assert.Equal($"{Escape}[1mGET https://localhost:7128/v1/todos{Escape}[0m", lines[0]);
+        Assert.Equal($"{Escape}[36mAccept{Escape}[0m: application/json", lines[1]);
+        Assert.Equal($"{Escape}[36mContent-Type{Escape}[0m: application/json; charset=utf-8", lines[4]);
+        Assert.Equal("[", lines[6]);
+    }
+
+    [Fact]
+    public async Task RenderFull_ColourEnabledAndSecretInHeaderValue_MasksTheRequestOnly()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        harness.SecretMask.Add(Secret);
+        HttpExchange exchange = new(
+            Request(headers: [new("X-Api-Key", Secret)]),
+            new ReceivedResponse(
+                new Version(1, 1),
+                200,
+                "OK",
+                [new("X-Echo", $"a {Secret} b")],
+                Array.Empty<byte>(),
+                TimeSpan.FromMilliseconds(5)));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Contains($"{Escape}[36mX-Api-Key{Escape}[0m: ***", harness.OutputLines);
+        Assert.Contains($"{Escape}[36mX-Echo{Escape}[0m: a {Secret} b", harness.OutputLines);
+    }
+
+    [Fact]
+    public async Task RenderFull_ColourEnabledAndSecretSpansRequestHeaderNameAndValue_IsMaskedAndOnlyStylingMoves()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        harness.SecretMask.Add("Key: abc");
+        HttpExchange exchange = new(Request(headers: [new("X-Key", "abc")]), Response(null, []));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("abc", harness.Output.Output, StringComparison.Ordinal);
+        Assert.Contains("X-***", harness.OutputLines);
+    }
+
+    [Fact]
+    public async Task RenderFull_ColourEnabledAndSeparatorAfterMaskedSecretInValue_StylesOnlyTheName()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        harness.SecretMask.Add(Secret);
+        HttpExchange exchange = new(Request(headers: [new("X-Key", $"{Secret}: tail")]), Response(null, []));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Contains($"{Escape}[36mX-Key{Escape}[0m: ***: tail", harness.OutputLines);
+        Assert.DoesNotContain(Secret, harness.Output.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RenderFull_ColourEnabledAndSecretIsWholeRequestHeaderName_StylesTheMaskedName()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        harness.SecretMask.Add("X-Key");
+        HttpExchange exchange = new(Request(headers: [new("X-Key", "value")]), Response(null, []));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Contains($"{Escape}[36m***{Escape}[0m: value", harness.OutputLines);
+    }
+
+    [Fact]
+    public async Task RenderFull_ColourEnabledAndControlCharacterInHeaderName_ShowsItAsText()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        HttpExchange exchange = new(
+            Request(),
+            new ReceivedResponse(
+                new Version(1, 1),
+                200,
+                "OK",
+                [new($"X-A{Escape}[2Jb", "v")],
+                Array.Empty<byte>(),
+                TimeSpan.FromMilliseconds(5)));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Contains($"{Escape}[36mX-A\\x1B[2Jb{Escape}[0m: v", harness.OutputLines);
+        Assert.DoesNotContain($"{Escape}[2J", harness.Output.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RenderFull_ColourEnabledAndNewlineInHeaderValue_StylesOnlyTheName()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        HttpExchange exchange = new(
+            Request(),
+            new ReceivedResponse(
+                new Version(1, 1),
+                200,
+                "OK",
+                [new("X-Multi", "one\ntwo: three")],
+                Array.Empty<byte>(),
+                TimeSpan.FromMilliseconds(5)));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Contains($"{Escape}[36mX-Multi{Escape}[0m: one", harness.OutputLines);
+        Assert.Contains("two: three", harness.OutputLines);
+    }
+
+    [Fact]
+    public async Task RenderFull_NoColoursButAnsiEnabled_WritesNoEscapeSequences()
+    {
+        using Harness harness = new(OutputMode.Full, ansi: true);
+        harness.Output.Profile.Capabilities.ColorSystem = ColorSystem.NoColors;
+        HttpExchange exchange = new(
+            Request(headers: [new("Accept", "application/json")]),
+            Response(JsonContentType, []));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(Escape, harness.Output.Output);
+    }
+
+    [Fact]
+    public async Task RenderFull_ColourDisabled_WritesNoEscapeSequences()
+    {
+        using Harness harness = new(OutputMode.Full);
+        HttpExchange exchange = new(
+            Request(headers: [new("Accept", "application/json")]),
+            Response(JsonContentType, []));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(Escape, harness.Output.Output);
+    }
+
+    [Fact]
+    public async Task RenderHeaders_ColourEnabled_StylesHeaderNames()
+    {
+        using Harness harness = new(OutputMode.Headers, ansi: true);
+        HttpExchange exchange = new(Request(), Response(JsonContentType, []));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Contains(
+            $"{Escape}[36mContent-Type{Escape}[0m: application/json; charset=utf-8",
+            harness.OutputLines);
+    }
+
+    [Fact]
+    public async Task RenderFull_BidiOverrideInHeaderAndBody_ShowsItsCode()
+    {
+        using Harness harness = new(OutputMode.Full);
+        HttpExchange exchange = new(
+            Request(),
+            new ReceivedResponse(
+                new Version(1, 1),
+                200,
+                "OK",
+                [new("X-File", "user\u202Etxt.exe")],
+                Encoding.UTF8.GetBytes("name\u2066x"),
+                TimeSpan.FromMilliseconds(5)));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Contains(@"X-File: user\u202Etxt.exe", harness.OutputLines);
+        Assert.Contains(@"name\u2066x", harness.OutputLines);
+    }
+
+    [Fact]
     public async Task RenderFull_EscapeSequenceInBodyAndHeaders_PrintsItAsText()
     {
         string clearScreen = $"{Escape}[2J";
@@ -770,18 +894,32 @@ public sealed class ResponseRendererTests
     }
 
     [Fact]
-    public async Task RenderFull_SecretWithControlCharacter_IsMaskedBeforeItIsEscaped()
+    public async Task RenderFull_RequestSecretWithControlCharacter_IsMaskedBeforeItIsEscaped()
     {
         string secret = $"pa{Escape}ss";
         using Harness harness = new(OutputMode.Full);
         harness.SecretMask.Add(secret);
         HttpExchange exchange = new(
-            Request(),
-            Response(TextContentType, Encoding.UTF8.GetBytes($"key={secret};")));
+            Request(headers: [new("X-Key", $"key={secret};")]),
+            Response(TextContentType, []));
 
         await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
 
-        Assert.Equal("key=***;", harness.OutputLines[^1]);
+        Assert.Equal("X-Key: key=***;", harness.OutputLines[1]);
+    }
+
+    [Fact]
+    public async Task RenderFull_ResponseSecretWithControlCharacter_IsShownWithTheCharacterAsText()
+    {
+        using Harness harness = new(OutputMode.Full);
+        harness.SecretMask.Add($"pa{Escape}ss");
+        HttpExchange exchange = new(
+            Request(),
+            Response(TextContentType, Encoding.UTF8.GetBytes($"key=pa{Escape}ss;")));
+
+        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
+
+        Assert.Equal(@"key=pa\x1Bss;", harness.OutputLines[^1]);
     }
 
     [Fact]
@@ -836,173 +974,6 @@ public sealed class ResponseRendererTests
     }
 
     [Fact]
-    public async Task RenderFull_SecretWithQuoteAndBackslashInJson_IsMasked()
-    {
-        const string QuotedSecret = """pass"word\1234""";
-
-        string output = await RenderBodyAsync(QuotedSecret, JsonContentType, """{"value":"pass\"word\\1234"}""");
-
-        AssertSecretIsHidden(QuotedSecret, output);
-    }
-
-    [Fact]
-    public async Task RenderFull_SecretWrittenWithOtherJsonEscapes_IsMasked()
-    {
-        const string SlashSecret = """pass/word"1234""";
-        string body = """{"value":"Bearer pass\/word\""" + """u00221234"}""";
-
-        string output = await RenderBodyAsync(SlashSecret, JsonContentType, body);
-
-        AssertSecretIsHidden(SlashSecret, output);
-        Assert.Contains("\"value\": \"Bearer ***\"", output, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RenderFull_MultiLinePemSecretInJson_IsMasked()
-    {
-        string[] pemLines = ["-----BEGIN KEY-----", "MIIBVgIBADANBgkq", "hkiG9w0BAQEFAASC", "-----END KEY-----"];
-        string pemSecret = string.Join('\n', pemLines);
-        string body = """{"value":"X""" + string.Join("""\n""", pemLines) + """X"}""";
-
-        string output = await RenderBodyAsync(pemSecret, JsonContentType, body);
-
-        AssertSecretIsHidden(pemSecret, output);
-        Assert.Contains("\"value\": \"X***X\"", output, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RenderFull_SecretWithTabInJson_IsMasked()
-    {
-        string tabSecret = "left" + (char)0x09 + "right";
-
-        string output = await RenderBodyAsync(tabSecret, JsonContentType, """{"value":"left\tright"}""");
-
-        AssertSecretIsHidden(tabSecret, output);
-    }
-
-    [Fact]
-    public async Task RenderFull_SecretWithEmojiSentRawInJson_IsMasked()
-    {
-        string emojiSecret = "token" + char.ConvertFromUtf32(0x1F600) + "secret";
-
-        string output = await RenderBodyAsync(emojiSecret, JsonContentType, $$"""{"value":"{{emojiSecret}}"}""");
-
-        AssertSecretIsHidden(emojiSecret, output);
-    }
-
-    [Theory]
-    [InlineData(0x7F)]
-    [InlineData(0x85)]
-    [InlineData(0x2028)]
-    [InlineData(0xA0)]
-    public async Task RenderFull_SecretWithCharacterTheJsonWriterEscapes_IsMasked(int character)
-    {
-        string oddSecret = "alpha" + (char)character + "omega";
-
-        string output = await RenderBodyAsync(oddSecret, JsonContentType, $$"""{"value":"{{oddSecret}}"}""");
-
-        AssertSecretIsHidden(oddSecret, output);
-    }
-
-    [Fact]
-    public async Task RenderFull_SecretAsJsonPropertyName_IsMasked()
-    {
-        string nameSecret = "alpha" + (char)0x2028 + "omega";
-
-        string output = await RenderBodyAsync(nameSecret, JsonContentType, $$"""{"{{nameSecret}}":1}""");
-
-        AssertSecretIsHidden(nameSecret, output);
-        Assert.Contains("\"***\": 1", output, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RenderFull_JsonDocumentSecretEchoedAsStructure_IsMasked()
-    {
-        const string DocumentSecret = """{"user":"admin","key":"abcd1234"}""";
-
-        string output = await RenderBodyAsync(DocumentSecret, JsonContentType, $$"""{"echo":{{DocumentSecret}}}""");
-
-        AssertSecretIsHidden(DocumentSecret, output);
-        Assert.EndsWith("\n{\"echo\":***}\n", output, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData("<r><t>pass&amp;word&lt;1234</t></r>")]
-    [InlineData("<r><t>pass&#38;word&#x3C;1234</t></r>")]
-    [InlineData("<r><t><![CDATA[pass&word<1234]]></t></r>")]
-    [InlineData("<r><t>pass&amp;<![CDATA[word<]]>1234</t></r>")]
-    public async Task RenderFull_SecretInXmlText_IsMasked(string body)
-    {
-        const string MarkupSecret = "pass&word<1234";
-
-        string output = await RenderBodyAsync(MarkupSecret, "application/xml", body);
-
-        AssertSecretIsHidden(MarkupSecret, output);
-    }
-
-    [Theory]
-    [InlineData("<r a=\"left&quot;right\" />")]
-    [InlineData("<r a=\"left&#34;right\" />")]
-    [InlineData("<r a='left\"right' />")]
-    public async Task RenderFull_SecretInXmlAttribute_IsMasked(string body)
-    {
-        const string AttributeSecret = "left\"right";
-
-        string output = await RenderBodyAsync(AttributeSecret, "application/xml", body);
-
-        AssertSecretIsHidden(AttributeSecret, output);
-        Assert.EndsWith("\n<r a=\"***\" />\n", output, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData("""{"value":"pass\"word\\1234"}""")]
-    [InlineData("<t>pass&quot;word\\1234</t>")]
-    public async Task RenderFull_EscapedSecretInBodyPrintedAsIs_IsMasked(string body)
-    {
-        const string QuotedSecret = """pass"word\1234""";
-
-        string output = await RenderBodyAsync(QuotedSecret, TextContentType, body);
-
-        AssertSecretIsHidden(QuotedSecret, output);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task RenderFull_SecretInsideLongerSecretWrittenWithOtherJsonEscapes_HidesBoth(bool longFirst)
-    {
-        const string UrlSecret = "https://admin:hunter2pw@host.example/db";
-        const string Body = """{"url":"https:\/\/admin:hunter2pw@host.example\/db"}""";
-
-        string output = await RenderBodyAsync(
-            longFirst ? [UrlSecret, InnerSecret] : [InnerSecret, UrlSecret],
-            JsonContentType,
-            Body);
-
-        AssertSecretIsHidden(PasswordPart, output);
-        AssertSecretIsHidden(InnerSecret, output);
-        Assert.Contains("\"url\": \"***\"", output, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task RenderFull_SecretInsideLongerSecretWrittenWithXmlReference_HidesBoth(bool longFirst)
-    {
-        const string FormSecret = "user=admin&password=hunter2pw";
-        const string Body = "<t>user=admin&#38;password=hunter2pw</t>";
-
-        string output = await RenderBodyAsync(
-            longFirst ? [FormSecret, InnerSecret] : [InnerSecret, FormSecret],
-            "application/xml",
-            Body);
-
-        AssertSecretIsHidden(PasswordPart, output);
-        AssertSecretIsHidden(InnerSecret, output);
-        Assert.EndsWith("\n<t>***</t>\n", output, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task RenderFull_ElapsedAtHalfMillisecond_RoundsAwayFromZero()
     {
         using Harness harness = new(OutputMode.Full);
@@ -1026,45 +997,11 @@ public sealed class ResponseRendererTests
         Assert.EndsWith("\nContent-Type: text/plain\n\n", harness.OutputText, StringComparison.Ordinal);
     }
 
-    private static Task<string> RenderBodyAsync(string secret, string contentType, string body) =>
-        RenderBodyAsync([secret], contentType, body);
-
-    private static async Task<string> RenderBodyAsync(string[] secrets, string contentType, string body)
-    {
-        using Harness harness = new(OutputMode.Full);
-        foreach (string secret in secrets)
-        {
-            harness.SecretMask.Add(secret);
-        }
-
-        HttpExchange exchange = new(Request(), Response(contentType, Encoding.UTF8.GetBytes(body)));
-
-        await harness.Renderer.RenderAsync(exchange, TestContext.Current.CancellationToken);
-
-        return harness.OutputText;
-    }
-
-    // A fragment is four characters, so the test only means something for a secret whose leaked form would
-    // still hold four of its characters in a row.
-    private static void AssertSecretIsHidden(string secret, string output)
-    {
-        const int FragmentLength = 4;
-
-        Assert.Contains(SecretMask.Placeholder, output, StringComparison.Ordinal);
-        for (int start = 0; start + FragmentLength <= secret.Length; start++)
-        {
-            Assert.DoesNotContain(secret.Substring(start, FragmentLength), output, StringComparison.Ordinal);
-        }
-    }
-
     private static ResolvedRequest Request(
         string method = "GET",
         string displayUrl = ToDosUrl,
         IReadOnlyList<KeyValuePair<string, string>>? headers = null) =>
-        new(method, new Uri(ToDosUrl), HttpVersion: null, headers ?? [], Body: null)
-        {
-            DisplayUrl = displayUrl,
-        };
+        new(method, new Uri(ToDosUrl), headers ?? [], displayUrl);
 
     private static ReceivedResponse Response(string? contentType, byte[] body, double elapsedMilliseconds = 12) =>
         new(
@@ -1076,12 +1013,18 @@ public sealed class ResponseRendererTests
             TimeSpan.FromMilliseconds(elapsedMilliseconds));
 
     private static RequestDefinition Definition(string name) =>
-        new(name, "POST", Template.Parse("https://localhost:7128/login"), HttpVersion: null, [], Body: null, Line: 1);
+        new("POST", Template.Parse("https://localhost:7128/login"), [], Line: 1) { Name = name };
 
     private sealed class Harness : IDisposable
     {
-        public Harness(OutputMode mode, int width = 80)
+        public Harness(OutputMode mode, int width = 80, bool ansi = false)
         {
+            if (ansi)
+            {
+                Output.EmitAnsiSequences();
+                Output.Profile.Capabilities.ColorSystem = ColorSystem.Standard;
+            }
+
             Output.Profile.Width = width;
             Error.Profile.Width = width;
             Renderer = new ResponseRenderer(

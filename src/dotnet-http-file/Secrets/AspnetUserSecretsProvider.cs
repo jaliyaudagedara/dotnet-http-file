@@ -3,7 +3,6 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Unicode;
 using System.Xml;
 using System.Xml.Linq;
 using DotNetHttpFile.Environments;
@@ -24,14 +23,6 @@ internal sealed class AspnetUserSecretsProvider(string userSecretsRoot) : ISecre
     // The ID becomes a folder name under the root, so it must not be able to point anywhere else.
     private static readonly SearchValues<char> s_invalidUserSecretsIdCharacters =
         SearchValues.Create([.. Path.GetInvalidFileNameChars(), '/', '\\']);
-
-    // Duplicate names are rejected while parsing because JsonObject throws ArgumentException on them later.
-    private static readonly JsonDocumentOptions s_documentOptions = new()
-    {
-        CommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true,
-        AllowDuplicateProperties = false,
-    };
 
     private static readonly XmlReaderSettings s_projectReaderSettings = new()
     {
@@ -62,7 +53,9 @@ internal sealed class AspnetUserSecretsProvider(string userSecretsRoot) : ISecre
 
     public string Name => ProviderName;
 
-    /// <summary>Gets the folder where the .NET user-secrets tooling keeps its files for the current user.</summary>
+    /// <summary>
+    /// Gets the folder where the .NET user-secrets tooling keeps its files for the current user.
+    /// </summary>
     public static string DefaultRoot() =>
         OperatingSystem.IsWindows()
             ? Path.Combine(
@@ -88,7 +81,7 @@ internal sealed class AspnetUserSecretsProvider(string userSecretsRoot) : ISecre
         JsonObject secrets = await ReadSecretsAsync(request.VariableName, secretsFilePath, cancellationToken)
             .ConfigureAwait(false);
 
-        Dictionary<string, string> values = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> values = [with(StringComparer.OrdinalIgnoreCase)];
         if (!TryFlatten(values, string.Empty, secrets))
         {
             throw Failure(s_userSecretsInvalidFileFormat, request.VariableName, secretsFilePath);
@@ -166,28 +159,19 @@ internal sealed class AspnetUserSecretsProvider(string userSecretsRoot) : ISecre
             throw FileReadFailure.Create(exception);
         }
 
-        // The parser does not validate UTF-8 inside strings, so a file in another encoding would parse
-        // and then fail with InvalidOperationException on the first string read.
-        if (!Utf8.IsValid(bytes))
-        {
-            throw Failure(s_userSecretsInvalidFileFormat, variableName, secretsFilePath);
-        }
-
-        ReadOnlySpan<byte> utf8Json = bytes;
-        if (utf8Json.StartsWith(Encoding.UTF8.Preamble))
-        {
-            utf8Json = utf8Json[Encoding.UTF8.Preamble.Length..];
-        }
-
         try
         {
-            return JsonNode.Parse(utf8Json, nodeOptions: null, s_documentOptions) as JsonObject
-                ?? throw Failure(s_userSecretsInvalidFileFormat, variableName, secretsFilePath);
+            if (JsonFile.TryParse(bytes, out JsonNode? root) && root is JsonObject secrets)
+            {
+                return secrets;
+            }
         }
         catch (JsonException exception)
         {
             throw Failure(s_userSecretsInvalidFileFormat, exception, variableName, secretsFilePath);
         }
+
+        throw Failure(s_userSecretsInvalidFileFormat, variableName, secretsFilePath);
     }
 
     // Joins nested names and array indexes with ':'. Returns false when two values end up under the same
@@ -219,15 +203,8 @@ internal sealed class AspnetUserSecretsProvider(string userSecretsRoot) : ISecre
 
                 return true;
 
-            case JsonValue value when value.GetValueKind() is JsonValueKind.String:
-                return values.TryAdd(key, value.GetValue<string>());
-
-            case JsonValue value
-                when value.GetValueKind() is JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False:
-                return values.TryAdd(key, value.GetValue<JsonElement>().GetRawText());
-
             default:
-                return true;
+                return JsonFile.ScalarText(node) is not string text || values.TryAdd(key, text);
         }
     }
 
@@ -235,11 +212,11 @@ internal sealed class AspnetUserSecretsProvider(string userSecretsRoot) : ISecre
         key.Length == 0 ? name : key + KeySeparator + name;
 
     private static HttpFileException Failure(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
-        new(string.Format(CultureInfo.CurrentCulture, format, arguments));
+        new(Messages.Format(format, arguments));
 
     private static HttpFileException Failure(
         CompositeFormat format,
         Exception innerException,
         params ReadOnlySpan<object?> arguments) =>
-        new(string.Format(CultureInfo.CurrentCulture, format, arguments), innerException);
+        new(Messages.Format(format, arguments), innerException);
 }

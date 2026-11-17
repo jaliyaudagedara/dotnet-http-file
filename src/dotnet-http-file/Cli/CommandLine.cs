@@ -1,9 +1,10 @@
+using System.Buffers;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.CommandLine.Parsing;
-using System.Globalization;
 using System.Text;
 using DotNetHttpFile.Output;
+using DotNetHttpFile.Parsing;
 using DotNetHttpFile.Resolution;
 
 namespace DotNetHttpFile.Cli;
@@ -27,11 +28,17 @@ internal static class CommandLine
     private const string ShowValueSeparator = "|";
     private const string InsecureOptionName = "--insecure";
     private const string InsecureOptionAlias = "-k";
+    private const string VarOptionName = "--var";
+    private const string VarOptionHelpName = "name=value";
+    private const char VarAssignment = '=';
     private const char OptionPrefix = '-';
 
     private static readonly string[] s_fileExtensions = [".http", ".rest"];
 
     private static readonly string[] s_showValues = [ShowFull, ShowBody, ShowHeaders, ShowStatus];
+
+    // The parser accepts --option=value and --option:value, and the value may be a secret.
+    private static readonly SearchValues<char> s_optionValueSeparators = SearchValues.Create("=:");
 
     private static readonly CompositeFormat s_fileExtensionNotSupportedFormat =
         CompositeFormat.Parse(Resources.FileExtensionNotSupported);
@@ -41,7 +48,12 @@ internal static class CommandLine
     private static readonly CompositeFormat s_unrecognizedOptionFormat =
         CompositeFormat.Parse(Resources.UnrecognizedOption);
 
-    /// <summary>Parses <paramref name="args"/> and calls <paramref name="run"/> with what they ask for.</summary>
+    private static readonly CompositeFormat s_varOptionInvalidFormat =
+        CompositeFormat.Parse(Resources.VarOptionInvalid);
+
+    /// <summary>
+    /// Parses <paramref name="args"/> and calls <paramref name="run"/> with what they ask for.
+    /// </summary>
     /// <returns>
     /// The exit code of <paramref name="run"/>; <see cref="ExitCodes.NotSent"/> when the arguments are not valid,
     /// with the reason on standard error; <see cref="ExitCodes.Success"/> for <c>--help</c> and <c>--version</c>.
@@ -87,6 +99,15 @@ internal static class CommandLine
             Description = Resources.InsecureOptionDescription,
         };
 
+        Option<string[]> varOption = new(VarOptionName)
+        {
+            Description = Resources.VarOptionDescription,
+            HelpName = VarOptionHelpName,
+            Arity = ArgumentArity.OneOrMore,
+            AllowMultipleArgumentsPerToken = false,
+        };
+        varOption.Validators.Add(ValidateVariables);
+
         RootCommand rootCommand = new(Resources.CommandDescription)
         {
             fileArgument,
@@ -95,26 +116,19 @@ internal static class CommandLine
             verboseOption,
             showOption,
             insecureOption,
+            varOption,
         };
-        rootCommand.Validators.Add(commandResult =>
-        {
-            if (commandResult.GetValue(verboseOption) && commandResult.GetResult(showOption) is not null)
-            {
-                commandResult.AddError(Resources.VerboseAndShowTogether);
-            }
-        });
         rootCommand.SetAction((parseResult, actionCancellationToken) =>
         {
-            OutputMode? forcedMode = parseResult.GetValue(verboseOption)
-                ? OutputMode.Full
-                : ShowMode(parseResult.GetValue(showOption));
-
-            RunOptions options = new(
-                parseResult.GetRequiredValue(fileArgument),
-                parseResult.GetValue(nameOption),
-                parseResult.GetValue(envOption),
-                forcedMode,
-                parseResult.GetValue(insecureOption));
+            RunOptions options = new(parseResult.GetRequiredValue(fileArgument))
+            {
+                RequestName = parseResult.GetValue(nameOption),
+                EnvironmentName = parseResult.GetValue(envOption),
+                ForcedMode = ShowMode(parseResult.GetValue(showOption)),
+                Insecure = parseResult.GetValue(insecureOption),
+                Variables = ToVariables(parseResult.GetResult(varOption)),
+                Verbose = parseResult.GetValue(verboseOption),
+            };
 
             return run(options, actionCancellationToken);
         });
@@ -137,15 +151,14 @@ internal static class CommandLine
             string? unknownOption = FindUnknownOption(parseResult.GetResult(fileArgument));
             if (unknownOption is not null)
             {
-                renderer.RenderError(
-                    string.Format(CultureInfo.CurrentCulture, s_unrecognizedOptionFormat, unknownOption));
+                renderer.RenderError(Messages.Format(s_unrecognizedOptionFormat, unknownOption));
 
                 return Task.FromResult(ExitCodes.NotSent);
             }
 
             foreach (ParseError error in parseResult.Errors)
             {
-                renderer.RenderError(error.Message);
+                renderer.RenderError(ErrorMessage(error, parseResult.UnmatchedTokens));
             }
 
             return Task.FromResult(ExitCodes.NotSent);
@@ -165,7 +178,8 @@ internal static class CommandLine
     }
 
     /// <summary>
-    /// Returns the token that stands where the file is expected when it is an option and not a file.
+    /// Returns the name of the option that stands where the file is expected, without any value attached to it,
+    /// or null when that token is a file or not an option.
     /// </summary>
     private static string? FindUnknownOption(ArgumentResult? fileResult)
     {
@@ -176,7 +190,31 @@ internal static class CommandLine
 
         string token = fileResult.Tokens[0].Value;
 
-        return token.StartsWith(OptionPrefix) && !File.Exists(token) ? token : null;
+        return token.StartsWith(OptionPrefix) && !File.Exists(token) ? OptionName(token) : null;
+    }
+
+    /// <summary>
+    /// Returns the parser's message for <paramref name="error"/>, or, when it quotes an unknown option with a value
+    /// attached, the unrecognized option message naming only the option.
+    /// </summary>
+    private static string ErrorMessage(ParseError error, IReadOnlyList<string> unmatchedTokens)
+    {
+        // The parser reports an unmatched token against the command and quotes it whole. ParseError carries only
+        // the message and the symbol result, not the token, so the token is matched by its quoted form.
+        if (error.SymbolResult is CommandResult)
+        {
+            foreach (string token in unmatchedTokens)
+            {
+                if (token.StartsWith(OptionPrefix)
+                    && OptionName(token).Length < token.Length
+                    && error.Message.Contains($"'{token}'", StringComparison.Ordinal))
+                {
+                    return Messages.Format(s_unrecognizedOptionFormat, OptionName(token));
+                }
+            }
+        }
+
+        return error.Message;
     }
 
     private static OutputMode? ShowMode(string? value)
@@ -201,6 +239,46 @@ internal static class CommandLine
             : OutputMode.Full;
     }
 
+    // The text after the first '=' is never shown: it can be a secret.
+    private static void ValidateVariables(OptionResult result)
+    {
+        // The arity counts values across every occurrence, so a bare --var after a valid one would pass it.
+        if (result.IdentifierTokenCount > result.Tokens.Count)
+        {
+            result.AddError(Resources.VarOptionNeedsNameValue);
+        }
+
+        foreach (Token token in result.Tokens)
+        {
+            int assignment = token.Value.IndexOf(VarAssignment);
+            if (assignment <= 0)
+            {
+                result.AddError(Resources.VarOptionNeedsNameValue);
+            }
+            else if (!FileVariable.IsValidName(token.Value[..assignment]))
+            {
+                result.AddError(Messages.Format(s_varOptionInvalidFormat, token.Value[..assignment]));
+            }
+        }
+    }
+
+    private static Dictionary<string, string>? ToVariables(OptionResult? result)
+    {
+        if (result is null)
+        {
+            return null;
+        }
+
+        Dictionary<string, string> variables = [with(StringComparer.Ordinal)];
+        foreach (Token token in result.Tokens)
+        {
+            int assignment = token.Value.IndexOf(VarAssignment);
+            variables[token.Value[..assignment]] = token.Value[(assignment + 1)..];
+        }
+
+        return variables;
+    }
+
     private static void ValidateFile(ArgumentResult result)
     {
         // A missing argument is reported by the parser itself.
@@ -212,11 +290,18 @@ internal static class CommandLine
         string path = result.Tokens[0].Value;
         if (!File.Exists(path))
         {
-            result.AddError(string.Format(CultureInfo.CurrentCulture, s_fileNotFoundFormat, path));
+            result.AddError(Messages.Format(s_fileNotFoundFormat, path));
         }
         else if (!s_fileExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
         {
-            result.AddError(string.Format(CultureInfo.CurrentCulture, s_fileExtensionNotSupportedFormat, path));
+            result.AddError(Messages.Format(s_fileExtensionNotSupportedFormat, path));
         }
+    }
+
+    private static string OptionName(string token)
+    {
+        int separator = token.AsSpan().IndexOfAny(s_optionValueSeparators);
+
+        return separator < 0 ? token : token[..separator];
     }
 }

@@ -2,7 +2,6 @@ using System.Buffers;
 using System.Globalization;
 using System.Reflection;
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -27,10 +26,9 @@ internal static class ReferenceEvaluator
     private const string XPathFalse = "false";
     private const string RoundTripFormat = "R";
 
-    // The values are substituted into requests, not HTML, so non-ASCII text and <, >, & and ' stay readable.
     private static readonly JsonWriterOptions s_compactOptions = new()
     {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        Encoder = BodyText.IndentedJsonOptions.Encoder,
     };
 
     private static readonly CompositeFormat s_referenceAllHeadersUnsupportedFormat =
@@ -94,10 +92,10 @@ internal static class ReferenceEvaluator
 
         if (reference.Source == ReferenceSource.Response && exchange.Response.IsContentEncoded)
         {
-            throw new HttpFileException(Format(
+            throw new HttpFileException(Messages.Format(
                 s_referenceBodyNotDecodedFormat,
                 reference.RequestName,
-                string.Join(", ", exchange.Response.UnsupportedCodings)));
+                string.Join(Messages.ListSeparator, exchange.Response.UnsupportedCodings)));
         }
 
         string body = reference.Source == ReferenceSource.Request
@@ -119,14 +117,14 @@ internal static class ReferenceEvaluator
             return EvaluateXPath(reference, body);
         }
 
-        throw new HttpFileException(Format(s_referenceUnsupportedBodySelectorFormat, reference.Expression));
+        throw new HttpFileException(Messages.Format(s_referenceUnsupportedBodySelectorFormat, reference.Expression));
     }
 
     private static string EvaluateHeader(RequestReferenceSegment reference, HttpExchange exchange)
     {
         if (reference.Selector == WholeSelector)
         {
-            throw new HttpFileException(Format(s_referenceAllHeadersUnsupportedFormat, reference.Expression));
+            throw new HttpFileException(Messages.Format(s_referenceAllHeadersUnsupportedFormat, reference.Expression));
         }
 
         IReadOnlyList<KeyValuePair<string, string>> headers = reference.Source == ReferenceSource.Request
@@ -136,7 +134,7 @@ internal static class ReferenceEvaluator
         List<string> values = [];
         foreach (KeyValuePair<string, string> header in headers)
         {
-            if (string.Equals(header.Key, reference.Selector, StringComparison.OrdinalIgnoreCase))
+            if (HeaderNames.Is(header, reference.Selector))
             {
                 values.Add(header.Value);
             }
@@ -144,12 +142,11 @@ internal static class ReferenceEvaluator
 
         if (values.Count == 0)
         {
-            throw new HttpFileException(
-                Format(
-                    s_referenceHeaderNotFoundFormat,
-                    reference.RequestName,
-                    SourceKeyword(reference),
-                    reference.Selector));
+            throw new HttpFileException(Messages.Format(
+                s_referenceHeaderNotFoundFormat,
+                reference.RequestName,
+                SourceKeyword(reference),
+                reference.Selector));
         }
 
         return string.Join(HeaderValueSeparator, values);
@@ -160,7 +157,7 @@ internal static class ReferenceEvaluator
         if (!JsonPath.TryParse(reference.Selector, out JsonPath? path))
         {
             throw new HttpFileException(
-                Format(s_referenceInvalidJsonPathFormat, reference.Selector, reference.Expression));
+                Messages.Format(s_referenceInvalidJsonPathFormat, reference.Selector, reference.Expression));
         }
 
         // System.Text.Json reports an escaped surrogate without its pair with InvalidOperationException, and
@@ -179,7 +176,7 @@ internal static class ReferenceEvaluator
             catch (Exception exception) when (IsFilterFunctionFailure(exception))
             {
                 throw new HttpFileException(
-                    Format(s_referenceInvalidJsonPathFormat, reference.Selector, reference.Expression),
+                    Messages.Format(s_referenceInvalidJsonPathFormat, reference.Selector, reference.Expression),
                     exception);
             }
 
@@ -190,7 +187,8 @@ internal static class ReferenceEvaluator
 
             return matches.Length switch
             {
-                0 => throw new HttpFileException(Format(s_referenceNoContentAtPathFormat, reference.Expression)),
+                0 => throw new HttpFileException(
+                    Messages.Format(s_referenceNoContentAtPathFormat, reference.Expression)),
                 1 => FormatSingleMatch(matches[0]),
                 _ => FormatMatchesAsArray(matches),
             };
@@ -198,7 +196,7 @@ internal static class ReferenceEvaluator
         catch (InvalidOperationException exception)
         {
             throw new HttpFileException(
-                Format(s_referenceBodyInvalidUnicodeFormat, reference.RequestName, SourceKeyword(reference)),
+                Messages.Format(s_referenceBodyInvalidUnicodeFormat, reference.RequestName, SourceKeyword(reference)),
                 exception);
         }
     }
@@ -226,7 +224,7 @@ internal static class ReferenceEvaluator
                 : s_referenceBodyNotJsonFormat;
 
             throw new HttpFileException(
-                Format(format, reference.RequestName, SourceKeyword(reference)),
+                Messages.Format(format, reference.RequestName, SourceKeyword(reference)),
                 exception);
         }
     }
@@ -290,7 +288,7 @@ internal static class ReferenceEvaluator
         catch (XmlException exception)
         {
             throw new HttpFileException(
-                Format(s_referenceBodyNotXmlFormat, reference.RequestName, SourceKeyword(reference)),
+                Messages.Format(s_referenceBodyNotXmlFormat, reference.RequestName, SourceKeyword(reference)),
                 exception);
         }
 
@@ -307,7 +305,7 @@ internal static class ReferenceEvaluator
         catch (XPathException exception)
         {
             throw new HttpFileException(
-                Format(s_referenceInvalidXPathFormat, reference.Selector, reference.Expression),
+                Messages.Format(s_referenceInvalidXPathFormat, reference.Selector, reference.Expression),
                 exception);
         }
     }
@@ -317,12 +315,13 @@ internal static class ReferenceEvaluator
         int count = nodes.Count;
         if (count == 0)
         {
-            throw new HttpFileException(Format(s_referenceNoContentAtPathFormat, reference.Expression));
+            throw new HttpFileException(Messages.Format(s_referenceNoContentAtPathFormat, reference.Expression));
         }
 
         if (count > 1)
         {
-            throw new HttpFileException(Format(s_referenceXPathMultipleNodesFormat, reference.Selector, count));
+            throw new HttpFileException(
+                Messages.Format(s_referenceXPathMultipleNodesFormat, reference.Selector, count));
         }
 
         nodes.MoveNext();
@@ -332,7 +331,4 @@ internal static class ReferenceEvaluator
 
     private static string SourceKeyword(RequestReferenceSegment reference) =>
         reference.Source == ReferenceSource.Request ? RequestKeyword : ResponseKeyword;
-
-    private static string Format(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
-        string.Format(CultureInfo.CurrentCulture, format, arguments);
 }

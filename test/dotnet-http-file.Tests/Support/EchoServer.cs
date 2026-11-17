@@ -12,7 +12,9 @@ using Microsoft.Extensions.Primitives;
 
 namespace DotNetHttpFile.Tests.Support;
 
-/// <summary>A request as <see cref="EchoServer"/> received it.</summary>
+/// <summary>
+/// A request as <see cref="EchoServer"/> received it.
+/// </summary>
 /// <param name="Method">The method on the request line.</param>
 /// <param name="Target">The raw request target, with its query string.</param>
 /// <param name="Protocol">The protocol on the request line, such as <c>HTTP/1.1</c>.</param>
@@ -27,7 +29,9 @@ internal sealed record RecordedRequest(
 {
     public string RequestLine => $"{Method} {Target} {Protocol}";
 
-    /// <summary>The values of the header named <paramref name="name"/>, in the order received.</summary>
+    /// <summary>
+    /// The values of the header named <paramref name="name"/>, in the order received.
+    /// </summary>
     public IReadOnlyList<string> HeaderValues(string name) =>
         [.. Headers.Where(header => string.Equals(header.Key, name, StringComparison.OrdinalIgnoreCase))
             .Select(header => header.Value)];
@@ -56,10 +60,14 @@ internal sealed class EchoServer : IAsyncDisposable
 
     public const string RedirectCookie = "session=echo-cookie; Path=/";
 
-    /// <summary>Not in echo_server.py: redirects to itself with 302, without end.</summary>
+    /// <summary>
+    /// Not in echo_server.py: redirects to itself with 302, without end.
+    /// </summary>
     public const string RedirectLoopPath = "/redirect-loop";
 
-    /// <summary>Not in echo_server.py: answers 404 with <see cref="NotFoundBody"/>.</summary>
+    /// <summary>
+    /// Not in echo_server.py: answers 404 with <see cref="NotFoundBody"/>.
+    /// </summary>
     public const string NotFoundPath = "/not-found";
 
     public const string NotFoundBody = """{"error": "not found"}""";
@@ -90,10 +98,14 @@ internal sealed class EchoServer : IAsyncDisposable
         BaseUri = baseUri;
     }
 
-    /// <summary>The address the server listens on, such as <c>http://127.0.0.1:50123/</c>.</summary>
+    /// <summary>
+    /// The address the server listens on, such as <c>http://127.0.0.1:50123/</c>.
+    /// </summary>
     public Uri BaseUri { get; }
 
-    /// <summary>A snapshot of the requests received so far, in the order they arrived.</summary>
+    /// <summary>
+    /// A snapshot of the requests received so far, in the order they arrived.
+    /// </summary>
     public IReadOnlyList<RecordedRequest> Requests => [.. _requests];
 
     /// <summary>

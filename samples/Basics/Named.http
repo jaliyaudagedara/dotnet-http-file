@@ -1,0 +1,24 @@
+# Each request has a name (# @name), which --name selects and other requests refer to.
+
+@BaseUrl=https://jsonplaceholder.typicode.com
+@Limit=3
+
+# @name getToDos
+GET {{BaseUrl}}/todos?_limit={{Limit}}
+
+###
+
+# @name createToDo
+POST {{BaseUrl}}/todos
+Content-Type: application/json
+
+{
+    "title": "Try dotnet http-file",
+    "completed": false
+}
+
+###
+
+# The id of the second todo that getToDos returns, so getToDos runs first.
+# @name getToDo
+GET {{BaseUrl}}/todos/{{getToDos.response.body.$[1].id}}

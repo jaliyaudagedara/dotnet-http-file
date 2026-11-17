@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using DotNetHttpFile.Templates;
@@ -9,20 +8,21 @@ internal static partial class HttpFileParser
 {
     private const char ByteOrderMark = '\uFEFF';
     private const string Separator = "###";
+    private const char SeparatorCharacter = '#';
     private const char HashComment = '#';
     private const string SlashComment = "//";
     private const char VariablePrefix = '@';
     private const char VariableAssignment = '=';
     private const char HeaderDelimiter = ':';
+    private const string HttpVersionPrefix = "HTTP/";
     private const string DefaultMethod = "GET";
-    private const string ExpressionStart = "{{";
-    private const string ExpressionEnd = "}}";
     private const char Period = '.';
     private const int MaxEchoedLength = 32;
     private const string Ellipsis = "...";
 
-    private static readonly HashSet<string> s_methods = new(StringComparer.Ordinal)
-    {
+    private static readonly HashSet<string> s_methods =
+    [
+        with(StringComparer.Ordinal),
         "OPTIONS",
         DefaultMethod,
         "HEAD",
@@ -32,7 +32,7 @@ internal static partial class HttpFileParser
         "DELETE",
         "TRACE",
         "CONNECT",
-    };
+    ];
 
     private static readonly CompositeFormat s_duplicateRequestNameFormat =
         CompositeFormat.Parse(Resources.DuplicateRequestName);
@@ -52,7 +52,9 @@ internal static partial class HttpFileParser
     private static readonly CompositeFormat s_unknownHttpMethodFormat =
         CompositeFormat.Parse(Resources.UnknownHttpMethod);
 
-    /// <summary>Parses the text of an <c>.http</c> file into its variables and request definitions.</summary>
+    /// <summary>
+    /// Parses the text of an <c>.http</c> file into its variables and request definitions.
+    /// </summary>
     /// <exception cref="HttpFileException">The content is not a valid <c>.http</c> file.</exception>
     public static HttpFile Parse(string path, string content)
     {
@@ -68,6 +70,7 @@ internal static partial class HttpFileParser
         List<RequestDefinition> requests = [];
         RequestBuilder? current = null;
         string? pendingName = null;
+        string? pendingTitle = null;
 
         foreach (SourceLine line in SplitLines(content))
         {
@@ -78,6 +81,7 @@ internal static partial class HttpFileParser
                 AddRequest(requests, current, content);
                 current = null;
                 pendingName = null;
+                pendingTitle = ParseTitle(text);
                 continue;
             }
 
@@ -115,7 +119,7 @@ internal static partial class HttpFileParser
             }
             else
             {
-                current = ParseRequestLine(text, pendingName, line.Number);
+                current = ParseRequestLine(text, pendingName, pendingTitle, line.Number);
             }
         }
 
@@ -125,7 +129,9 @@ internal static partial class HttpFileParser
         return new HttpFile(path, variables, requests);
     }
 
-    /// <summary>Reads and parses the <c>.http</c> file at <paramref name="path"/>.</summary>
+    /// <summary>
+    /// Reads and parses the <c>.http</c> file at <paramref name="path"/>.
+    /// </summary>
     /// <exception cref="HttpFileException">The content is not a valid <c>.http</c> file.</exception>
     public static async Task<HttpFile> LoadAsync(string path, CancellationToken cancellationToken = default)
     {
@@ -134,7 +140,9 @@ internal static partial class HttpFileParser
         return Parse(path, content);
     }
 
-    /// <summary>Counts the line breaks in <paramref name="text"/>, taking CRLF as one.</summary>
+    /// <summary>
+    /// Counts the line breaks in <paramref name="text"/>, taking CRLF as one.
+    /// </summary>
     public static int CountLineTerminators(ReadOnlySpan<char> text)
     {
         int count = 0;
@@ -155,11 +163,6 @@ internal static partial class HttpFileParser
         @"^(#|//)\s*@name(?<arguments>\s.*)?$",
         RegexOptions.ExplicitCapture | RegexOptions.CultureInvariant)]
     private static partial Regex NameCommentPattern();
-
-    [GeneratedRegex(
-        @"^(?<target>.+?)(\s+(?<version>HTTP/\S+))?$",
-        RegexOptions.ExplicitCapture | RegexOptions.CultureInvariant)]
-    private static partial Regex RequestLinePattern();
 
     private static bool IsComment(string text) =>
         text.StartsWith(HashComment) || text.StartsWith(SlashComment, StringComparison.Ordinal);
@@ -194,8 +197,7 @@ internal static partial class HttpFileParser
         string[] names = arguments.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         if (names.Length != 1)
         {
-            throw new HttpFileException(string.Format(
-                CultureInfo.CurrentCulture,
+            throw new HttpFileException(Messages.Format(
                 s_invalidRequestNameFormat,
                 LeadingToken(names.FirstOrDefault(string.Empty)),
                 line));
@@ -204,83 +206,90 @@ internal static partial class HttpFileParser
         return names[0];
     }
 
+    private static string? ParseTitle(string separatorLine)
+    {
+        // "#### Title" is a separator too, so every '#' it starts with is left out of the title.
+        string title = separatorLine.TrimStart(SeparatorCharacter).Trim();
+
+        return title.Length == 0 ? null : title;
+    }
+
     private static FileVariable ParseVariable(string text, int line)
     {
         int assignment = text.IndexOf(VariableAssignment);
         string name = assignment < 0 ? string.Empty : text[1..assignment].TrimEnd();
-        if (name.Length == 0 || name.Any(char.IsWhiteSpace))
+        if (!FileVariable.IsValidName(name))
         {
-            throw new HttpFileException(string.Format(
-                CultureInfo.CurrentCulture,
-                s_invalidVariableDefinitionFormat,
-                LeadingToken(text),
-                line));
+            throw new HttpFileException(Messages.Format(s_invalidVariableDefinitionFormat, LeadingToken(text), line));
         }
 
         return new FileVariable(name, ParseTemplate(text[(assignment + 1)..].TrimStart(), line), line);
     }
 
-    private static RequestBuilder ParseRequestLine(string text, string? name, int line)
+    private static RequestBuilder ParseRequestLine(string text, string? name, string? title, int line)
     {
-        Match match = RequestLinePattern().Match(text);
-        Group httpVersion = match.Groups["version"];
-        string target = match.Groups["target"].Value;
+        (string target, string? httpVersion) = SplitHttpVersion(text);
         string method = DefaultMethod;
         string url = target;
 
-        int methodEnd = IndexOfWhiteSpaceOutsideExpressions(target);
+        int methodEnd = WhiteSpaceOutsideExpressions(target).FirstOrDefault(-1);
         if (methodEnd >= 0)
         {
             method = target[..methodEnd];
             if (!s_methods.Contains(method))
             {
-                throw new HttpFileException(string.Format(
-                    CultureInfo.CurrentCulture,
-                    s_unknownHttpMethodFormat,
-                    LeadingToken(method),
-                    line));
+                throw new HttpFileException(Messages.Format(s_unknownHttpMethodFormat, LeadingToken(method), line));
             }
 
             url = target[methodEnd..].TrimStart();
         }
 
-        return new RequestBuilder(
-            name,
-            method,
-            ParseTemplate(url, line),
-            httpVersion.Success ? httpVersion.Value : null,
-            line);
+        return new RequestBuilder(name, title, method, ParseTemplate(url, line), httpVersion, line);
+    }
+
+    // The version is the last token of the line when it starts with "HTTP/" and names something after it.
+    private static (string Target, string? HttpVersion) SplitHttpVersion(string text)
+    {
+        int separator = WhiteSpaceOutsideExpressions(text).LastOrDefault(-1);
+        if (separator < 0)
+        {
+            return (text, null);
+        }
+
+        string lastToken = text[(separator + 1)..];
+        bool isHttpVersion = lastToken.Length > HttpVersionPrefix.Length
+            && lastToken.StartsWith(HttpVersionPrefix, StringComparison.Ordinal);
+
+        return isHttpVersion ? (text[..separator].TrimEnd(), lastToken) : (text, null);
     }
 
     // Whitespace inside {{...}} belongs to the URL, so "https://host/{{$randomInt 1 9}}" has no method.
     // An expression is what Template.Parse takes as one: a "{{" with no "}}" after it is plain text, and in
     // "{{a {{b}}" only "{{b}}" is an expression, and "\{{a b}}" is plain text.
-    private static int IndexOfWhiteSpaceOutsideExpressions(string text)
+    private static IEnumerable<int> WhiteSpaceOutsideExpressions(string text)
     {
         for (int index = 0; index < text.Length; index++)
         {
             ReadOnlySpan<char> remaining = text.AsSpan(index);
-            if (remaining.StartsWith(ExpressionStart, StringComparison.Ordinal))
+            if (remaining.StartsWith(Template.ExpressionStart, StringComparison.Ordinal))
             {
                 if (Template.IsEscaped(text, index))
                 {
-                    index += ExpressionStart.Length - 1;
+                    index += Template.ExpressionStart.Length - 1;
                     continue;
                 }
 
-                int end = remaining.IndexOf(ExpressionEnd, StringComparison.Ordinal);
-                if (end >= 0 && remaining[1..end].IndexOf(ExpressionStart, StringComparison.Ordinal) < 0)
+                int end = remaining.IndexOf(Template.ExpressionEnd, StringComparison.Ordinal);
+                if (end >= 0 && remaining[1..end].IndexOf(Template.ExpressionStart, StringComparison.Ordinal) < 0)
                 {
-                    index += end + ExpressionEnd.Length - 1;
+                    index += end + Template.ExpressionEnd.Length - 1;
                 }
             }
             else if (char.IsWhiteSpace(text[index]))
             {
-                return index;
+                yield return index;
             }
         }
-
-        return -1;
     }
 
     private static HeaderDefinition ParseHeader(string text, int line)
@@ -289,8 +298,7 @@ internal static partial class HttpFileParser
         string name = delimiter < 0 ? string.Empty : text[..delimiter].TrimEnd();
         if (name.Length == 0 || name.Any(char.IsWhiteSpace))
         {
-            throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_invalidHeaderFormat, LeadingToken(text), line));
+            throw new HttpFileException(Messages.Format(s_invalidHeaderFormat, LeadingToken(text), line));
         }
 
         return new HeaderDefinition(name, ParseTemplate(text[(delimiter + 1)..].TrimStart(), line), line);
@@ -322,9 +330,7 @@ internal static partial class HttpFileParser
             int expressionLine = line + CountLineTerminators(text.AsSpan(0, exception.ExpressionOffset ?? 0));
             string message = exception.Message.EndsWith(Period) ? exception.Message[..^1] : exception.Message;
 
-            throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_messageAtLineFormat, message, expressionLine),
-                exception);
+            throw new HttpFileException(Messages.Format(s_messageAtLineFormat, message, expressionLine), exception);
         }
     }
 
@@ -343,22 +349,19 @@ internal static partial class HttpFileParser
             bodyLine = first.Number;
         }
 
-        requests.Add(new RequestDefinition(
-            builder.Name,
-            builder.Method,
-            builder.Url,
-            builder.HttpVersion,
-            builder.Headers,
-            body,
-            builder.Line)
+        requests.Add(new RequestDefinition(builder.Method, builder.Url, builder.Headers, builder.Line)
         {
+            Name = builder.Name,
+            Title = builder.Title,
+            HttpVersion = builder.HttpVersion,
+            Body = body,
             BodyLine = bodyLine,
         });
     }
 
     private static void ThrowIfDuplicateNames(List<RequestDefinition> requests)
     {
-        Dictionary<string, int> linesByName = new(StringComparer.Ordinal);
+        Dictionary<string, int> linesByName = [with(StringComparer.Ordinal)];
         foreach (RequestDefinition request in requests)
         {
             if (request.Name is null || linesByName.TryAdd(request.Name, request.Line))
@@ -366,8 +369,7 @@ internal static partial class HttpFileParser
                 continue;
             }
 
-            throw new HttpFileException(string.Format(
-                CultureInfo.CurrentCulture,
+            throw new HttpFileException(Messages.Format(
                 s_duplicateRequestNameFormat,
                 request.Name,
                 linesByName[request.Name],
@@ -377,9 +379,17 @@ internal static partial class HttpFileParser
 
     private readonly record struct SourceLine(int Number, int Start, int End);
 
-    private sealed class RequestBuilder(string? name, string method, Template url, string? httpVersion, int line)
+    private sealed class RequestBuilder(
+        string? name,
+        string? title,
+        string method,
+        Template url,
+        string? httpVersion,
+        int line)
     {
         public string? Name { get; } = name;
+
+        public string? Title { get; } = title;
 
         public string Method { get; } = method;
 

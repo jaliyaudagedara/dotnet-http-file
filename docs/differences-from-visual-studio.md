@@ -11,5 +11,16 @@ Compared with Visual Studio 2026 Insiders 18.13:
 - **No Windows authentication.** A bare `Authorization: Negotiate` or `NTLM` header is sent as written.
 - **`EntraAccessToken`** is the tool's own provider. VS can't resolve it.
 - **XPath** starting with `/` is accepted, with any XML content type. VS rejects it.
-- **Not checked against VS:** GraphQL queries with blank lines inside, without variables or without
-  `Content-Type`, and wildcard JSONPath with zero or one match.
+- **GraphQL queries can hold blank lines.** VS splits the body at the first blank line and fails with
+  HTTP0029 when the rest is not JSON. The tool takes as variables the text after a blank line that is a JSON
+  object, trying the last blank line first and then each one before it. When there is none, the whole body is
+  the query (for example an operation, a blank line, then a fragment or an anonymous query such as
+  `{ hero { name } }`). Then a block after a blank line that starts as a JSON object does (`{` followed by
+  `"` or `}`) is an error (exit code 2): it is read as variables with a mistake in them.
+- **GraphQL variables are a JSON object.** A last block that is a JSON array is part of the query. VS sends it
+  as the variables.
+- **GraphQL without `Content-Type`** is sent as `application/json`. VS sends `text/plain; charset=utf-8`.
+- **Not checked against VS:**
+  - A backslash that belongs to the text right before `{{` (see [Escaping `{{`](syntax.md#escaping-)).
+  - Wildcard JSONPath (`[*]` or `.*`) with zero or one match. The tool returns an array, as the 18.13 release
+    notes say a `[*]` projection does.

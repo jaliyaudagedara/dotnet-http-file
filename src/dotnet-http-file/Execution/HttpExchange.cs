@@ -1,32 +1,45 @@
 namespace DotNetHttpFile.Execution;
 
-/// <summary>A request with every variable and reference substituted, as it is sent.</summary>
+/// <summary>
+/// A request with every variable and reference substituted, as it is sent.
+/// </summary>
 /// <param name="Method">The HTTP method.</param>
 /// <param name="Url">
 /// The URL to send to. For sending only: never print it or any text derived from it. <see cref="Uri"/> rewrites
 /// the text (escaping, host case), so a provider-resolved value in it no longer matches what the secret mask
 /// knows. Print <see cref="DisplayUrl"/> instead.
 /// </param>
-/// <param name="HttpVersion">The version written on the request line, or null.</param>
 /// <param name="Headers">The headers in file order.</param>
-/// <param name="Body">The body, or null when the request has none.</param>
+/// <param name="DisplayUrl">
+/// The only URL to print. For a request from the file, the URL as resolved with provider-resolved values masked.
+/// For a redirect, the location the server sent, masked only when it takes parts of the request URL.
+/// </param>
 internal sealed record ResolvedRequest(
     string Method,
     Uri Url,
-    string? HttpVersion,
     IReadOnlyList<KeyValuePair<string, string>> Headers,
-    string? Body)
+    string DisplayUrl)
 {
     /// <summary>
-    /// The URL as resolved from the file, with provider-resolved values already masked. The only URL to print.
+    /// The version written on the request line, or null.
     /// </summary>
-    public required string DisplayUrl { get; init; }
+    public string? HttpVersion { get; init; }
+
+    /// <summary>
+    /// The body, or null when the request has none.
+    /// </summary>
+    public string? Body { get; init; }
 
     /// <summary>
     /// The file line of each header, parallel to <see cref="ResolvedRequest.Headers"/>. Needed only to build the
     /// message that is sent, whose header warnings and errors name the line.
     /// </summary>
     public IReadOnlyList<int> HeaderLines { get; init; } = [];
+
+    /// <summary>
+    /// Whether the URL, a header or the body took a value from the <c>EntraAccessToken</c> provider.
+    /// </summary>
+    public bool UsesEntraAccessToken { get; init; }
 
     // The generated record text would print the URL, headers and body, which can hold provider-resolved values.
     public override string ToString() => $"{Method} {DisplayUrl}";
@@ -44,19 +57,19 @@ internal sealed record ReceivedResponse(
     ReadOnlyMemory<byte> Body,
     TimeSpan Elapsed)
 {
-    private const string ContentTypeHeader = "Content-Type";
-    private const string ContentEncodingHeader = "Content-Encoding";
     private const string IdentityCoding = "identity";
     private const char CodingSeparator = ',';
 
-    /// <summary>The first <c>Content-Type</c> header value, or null when the response has none.</summary>
+    /// <summary>
+    /// The first <c>Content-Type</c> header value, or null when the response has none.
+    /// </summary>
     public string? ContentType
     {
         get
         {
             foreach (KeyValuePair<string, string> header in Headers)
             {
-                if (string.Equals(header.Key, ContentTypeHeader, StringComparison.OrdinalIgnoreCase))
+                if (HeaderNames.Is(header, HeaderNames.ContentType))
                 {
                     return header.Value;
                 }
@@ -73,14 +86,16 @@ internal sealed record ReceivedResponse(
     public IReadOnlyList<string> ContentCodings =>
     [
         .. Headers
-            .Where(header => string.Equals(header.Key, ContentEncodingHeader, StringComparison.OrdinalIgnoreCase))
+            .Where(header => HeaderNames.Is(header, HeaderNames.ContentEncoding))
             .SelectMany(header => header.Value.Split(
                 CodingSeparator,
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             .Where(coding => !string.Equals(coding, IdentityCoding, StringComparison.OrdinalIgnoreCase)),
     ];
 
-    /// <summary>The codings of <see cref="ContentCodings"/> that the tool does not decode, each named once.</summary>
+    /// <summary>
+    /// The codings of <see cref="ContentCodings"/> that the tool does not decode, each named once.
+    /// </summary>
     public IReadOnlyList<string> UnsupportedCodings =>
     [
         .. ContentCodings
@@ -97,5 +112,7 @@ internal sealed record ReceivedResponse(
     public bool IsSuccess => StatusCode is >= 200 and <= 299;
 }
 
-/// <summary>A sent request and the response it received.</summary>
+/// <summary>
+/// A sent request and the response it received.
+/// </summary>
 internal sealed record HttpExchange(ResolvedRequest Request, ReceivedResponse Response);

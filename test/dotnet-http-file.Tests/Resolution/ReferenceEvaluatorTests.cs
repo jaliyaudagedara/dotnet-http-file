@@ -575,9 +575,9 @@ public sealed class ReferenceEvaluatorTests
     private static HttpExchange Exchange(ReceivedResponse response) => new(Request(body: null), response);
 
     private static ResolvedRequest Request(string? body) =>
-        new("POST", new Uri("http://localhost:5199/echo"), HttpVersion: null, [new("X-Trace", "trace-1")], body)
+        new("POST", new Uri("http://localhost:5199/echo"), [new("X-Trace", "trace-1")], "http://localhost:5199/echo")
         {
-            DisplayUrl = "http://localhost:5199/echo",
+            Body = body,
         };
 
     private static ReceivedResponse Response(string? contentType, byte[] body) =>

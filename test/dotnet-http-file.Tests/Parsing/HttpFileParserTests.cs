@@ -78,6 +78,56 @@ public sealed class HttpFileParserTests
     }
 
     [Fact]
+    public void Parse_SeparatorWithText_SetsTitleOfNextRequest()
+    {
+        string content = Crlf(
+            "GET https://a/1",
+            "",
+            "### List existing indexes",
+            "GET https://a/2",
+            "");
+
+        HttpFile file = HttpFileParser.Parse(FilePath, content);
+
+        Assert.Equal([null, "List existing indexes"], file.Requests.Select(request => request.Title));
+    }
+
+    [Theory]
+    [InlineData("###")]
+    [InlineData("###   ")]
+    [InlineData("#####")]
+    public void Parse_BareSeparator_LeavesTitleNull(string separator)
+    {
+        string content = Crlf(separator, "GET https://a/2", "");
+
+        HttpFile file = HttpFileParser.Parse(FilePath, content);
+
+        Assert.Null(Assert.Single(file.Requests).Title);
+    }
+
+    [Fact]
+    public void Parse_SeparatorTitle_IsTrimmed()
+    {
+        string content = Crlf("###   Get one  ", "GET https://a/1", "");
+
+        HttpFile file = HttpFileParser.Parse(FilePath, content);
+
+        Assert.Equal("Get one", Assert.Single(file.Requests).Title);
+    }
+
+    [Theory]
+    [InlineData("#### Get one")]
+    [InlineData("######Get one")]
+    public void Parse_LongerSeparatorWithText_TitleHasNoLeadingHashes(string separator)
+    {
+        string content = Crlf(separator, "GET https://a/2", "");
+
+        HttpFile file = HttpFileParser.Parse(FilePath, content);
+
+        Assert.Equal("Get one", Assert.Single(file.Requests).Title);
+    }
+
+    [Fact]
     public void Parse_UrlWithoutMethod_DefaultsToGet()
     {
         HttpFile file = HttpFileParser.Parse(FilePath, "https://localhost/items\r\n");
@@ -541,6 +591,60 @@ public sealed class HttpFileParserTests
 
         RequestDefinition request = Assert.Single(file.Requests);
         Assert.Equal(("GET", "GET", "HTTP/1.1"), (request.Method, request.Url.Raw, request.HttpVersion));
+    }
+
+    [Theory]
+    [InlineData("GET https://localhost/a \t  HTTP/1.1", "https://localhost/a", "HTTP/1.1")]
+    [InlineData("GET https://localhost/a HTTP/2 HTTP/3", "https://localhost/a HTTP/2", "HTTP/3")]
+    [InlineData("GET https://localhost/{{id}} HTTP/2", "https://localhost/{{id}}", "HTTP/2")]
+    [InlineData("GET https://localhost/a HTTP/{{$fn 1 2}}", "https://localhost/a", "HTTP/{{$fn 1 2}}")]
+    [InlineData("GET https://localhost/a HTTP/", "https://localhost/a HTTP/", null)]
+    [InlineData("GET https://localhost/a http/1.1", "https://localhost/a http/1.1", null)]
+    [InlineData("GET https://localhost/aHTTP/1.1", "https://localhost/aHTTP/1.1", null)]
+    [InlineData("GET https://localhost/a HTTP/1.1 x", "https://localhost/a HTTP/1.1 x", null)]
+    public void Parse_RequestLine_ReadsOnlyALastTokenThatStartsWithHttpSlashAsTheVersion(
+        string requestLine,
+        string url,
+        string? httpVersion)
+    {
+        HttpFile file = HttpFileParser.Parse(FilePath, requestLine + "\r\n");
+
+        RequestDefinition request = Assert.Single(file.Requests);
+        Assert.Equal(("GET", url, httpVersion), (request.Method, request.Url.Raw, request.HttpVersion));
+    }
+
+    [Fact]
+    public void Parse_VersionWithoutMethodOrUrl_ReadsItAsTheUrl()
+    {
+        HttpFile file = HttpFileParser.Parse(FilePath, "HTTP/1.1\r\n");
+
+        RequestDefinition request = Assert.Single(file.Requests);
+        Assert.Equal(("GET", "HTTP/1.1", null), (request.Method, request.Url.Raw, request.HttpVersion));
+    }
+
+    [Fact]
+    public void Parse_VersionLikeTextInsideAnExpression_StaysInTheUrl()
+    {
+        HttpFile file = HttpFileParser.Parse(FilePath, "GET https://localhost/{{$fn a HTTP/1}}\r\n");
+
+        RequestDefinition request = Assert.Single(file.Requests);
+        Assert.Equal(
+            ("GET", "https://localhost/{{$fn a HTTP/1}}", null),
+            (request.Method, request.Url.Raw, request.HttpVersion));
+    }
+
+    // A pattern that tries each space of the run as the start of the version takes the square of its length,
+    // which made this test run for minutes.
+    [Fact]
+    public void Parse_RequestLineWithLongWhiteSpaceRun_DoesNotTryEachSpaceAsTheStartOfTheVersion()
+    {
+        const int SpaceCount = 200_000;
+        string requestLine = $"GET{new string(' ', SpaceCount)}https://localhost/items";
+
+        HttpFile file = HttpFileParser.Parse(FilePath, requestLine);
+
+        RequestDefinition request = Assert.Single(file.Requests);
+        Assert.Equal(("GET", "https://localhost/items", null), (request.Method, request.Url.Raw, request.HttpVersion));
     }
 
     [Fact]

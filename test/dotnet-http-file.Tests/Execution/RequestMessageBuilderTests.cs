@@ -128,6 +128,39 @@ public sealed class RequestMessageBuilderTests
         Assert.Equal(["Accept"], message.Headers.NonValidated.Select(header => header.Key));
     }
 
+    [Fact]
+    public void Build_ContentTypeWithoutBody_DropsItWithoutWarning()
+    {
+        ResolvedRequest request = ResolvedRequestFactory.Create(
+            "GET",
+            s_url,
+            headers: [("Content-Type", "application/json", 3)]);
+        List<string> warnings = [];
+        List<string> log = [];
+
+        using HttpRequestMessage message = RequestMessageBuilder.Build(request, warnings, log.Add);
+
+        Assert.Empty(warnings);
+        Assert.Null(message.Content);
+        Assert.Equal(["Content-Type on line 3 not sent: the request has no body."], log);
+    }
+
+    [Fact]
+    public void Build_ContentLengthWithoutBody_StillWarns()
+    {
+        ResolvedRequest request = ResolvedRequestFactory.Create(
+            "GET",
+            s_url,
+            headers: [("Content-Length", "0", 4)]);
+        List<string> warnings = [];
+
+        using HttpRequestMessage message = RequestMessageBuilder.Build(request, warnings);
+
+        Assert.Equal(
+            ["Header 'Content-Length' ignored: a request without a body cannot have content headers (line 4)."],
+            warnings);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("{}")]
@@ -202,10 +235,7 @@ public sealed class RequestMessageBuilderTests
     [Fact]
     public void Build_HeaderLinesNotParallelToHeaders_ThrowsArgumentException()
     {
-        ResolvedRequest request = new("GET", s_url, HttpVersion: null, [new("Accept", "*/*")], Body: null)
-        {
-            DisplayUrl = s_url.OriginalString,
-        };
+        ResolvedRequest request = new("GET", s_url, [new("Accept", "*/*")], s_url.OriginalString);
 
         Assert.Throws<ArgumentException>(() => RequestMessageBuilder.Build(request, []));
     }

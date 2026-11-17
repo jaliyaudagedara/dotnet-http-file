@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using DotNetHttpFile.Environments;
 using DotNetHttpFile.Execution;
@@ -9,17 +8,28 @@ using DotNetHttpFile.Secrets;
 
 namespace DotNetHttpFile.Cli;
 
-/// <summary>Runs one request of an <c>.http</c> file, after the requests it refers to.</summary>
+/// <summary>
+/// Runs one request of an <c>.http</c> file, after the requests it refers to.
+/// </summary>
+/// <param name="console">The streams the run writes to.</param>
+/// <param name="picker">Picks the request when none is named and a terminal can ask.</param>
+/// <param name="createProviders">Creates the secret providers of a run, given the run's diagnostic log.</param>
+/// <param name="createHandler">Creates the HTTP handler; the argument is true for <c>--insecure</c>.</param>
+/// <param name="timeProvider">The clock of the dynamic variables.</param>
+/// <param name="getEnvironmentVariable">Reads a process environment variable.</param>
 internal sealed class HttpFileRunner(
     ConsoleStreams console,
     IRequestPicker picker,
-    SecretProviderRegistry providers,
+    Func<DiagnosticLog, SecretProviderRegistry> createProviders,
     Func<bool, HttpMessageHandler> createHandler,
     TimeProvider timeProvider,
     Func<string, string?> getEnvironmentVariable)
 {
     private const string DotEnvFileName = ".env";
-    private const string NameSeparator = ", ";
+    private const int UnauthorizedStatusCode = 401;
+    private const string WrongTenantCode = "InvalidAuthenticationTokenTenant";
+
+    private static readonly byte[] s_wrongTenantCodeUtf8 = Encoding.UTF8.GetBytes(WrongTenantCode);
 
     private static readonly CompositeFormat s_dependencyFailedFormat =
         CompositeFormat.Parse(Resources.DependencyFailed);
@@ -40,15 +50,40 @@ internal sealed class HttpFileRunner(
     private static readonly CompositeFormat s_requestNameNotFoundNoneNamedFormat =
         CompositeFormat.Parse(Resources.RequestNameNotFoundNoneNamed);
 
+    private static readonly CompositeFormat s_requestTitleAmbiguousFormat =
+        CompositeFormat.Parse(Resources.RequestTitleAmbiguous);
+
     private static readonly CompositeFormat s_unexpectedErrorFormat =
         CompositeFormat.Parse(Resources.UnexpectedError);
 
-    /// <summary>Sends the request <paramref name="options"/> selects and writes the outcome to the console.</summary>
+    private static readonly CompositeFormat s_varOptionNotUsedFormat =
+        CompositeFormat.Parse(Resources.VarOptionNotUsed);
+
+    private static readonly CompositeFormat s_verboseDecodedFormat = CompositeFormat.Parse(Resources.VerboseDecoded);
+
+    private static readonly CompositeFormat s_verboseDotEnvFileFormat =
+        CompositeFormat.Parse(Resources.VerboseDotEnvFile);
+
+    private static readonly CompositeFormat s_verboseEnvironmentFormat =
+        CompositeFormat.Parse(Resources.VerboseEnvironment);
+
+    private static readonly CompositeFormat s_verboseEnvironmentFileFormat =
+        CompositeFormat.Parse(Resources.VerboseEnvironmentFile);
+
+    private static readonly CompositeFormat s_verboseExchangeFormat =
+        CompositeFormat.Parse(Resources.VerboseExchange);
+
+    private static readonly CompositeFormat s_verboseHttpFileFormat = CompositeFormat.Parse(Resources.VerboseHttpFile);
+
+    private static readonly CompositeFormat s_verbosePlanFormat = CompositeFormat.Parse(Resources.VerbosePlan);
+
+    /// <summary>
+    /// Sends the request <paramref name="options"/> selects and writes the outcome to the console.
+    /// </summary>
     /// <returns>
     /// <see cref="ExitCodes.Success"/> for a 2xx response, <see cref="ExitCodes.ErrorStatus"/> for any other
     /// response or for one whose body could not be decoded, <see cref="ExitCodes.NotSent"/> when the request could
-    /// not be sent and
-    /// <see cref="ExitCodes.Cancelled"/> when <paramref name="cancellationToken"/> was cancelled.
+    /// not be sent and <see cref="ExitCodes.Cancelled"/> when <paramref name="cancellationToken"/> was cancelled.
     /// </returns>
     public async Task<int> RunAsync(RunOptions options, CancellationToken cancellationToken = default)
     {
@@ -57,10 +92,11 @@ internal sealed class HttpFileRunner(
         OutputMode mode = options.ForcedMode ?? (console.IsOutputRedirected ? OutputMode.Body : OutputMode.Full);
         SecretMask secretMask = new();
         ResponseRenderer renderer = new(console, secretMask, mode);
+        DiagnosticLog log = new(console.Error, secretMask) { IsEnabled = options.Verbose };
 
         try
         {
-            return await RunCoreAsync(options, secretMask, renderer, cancellationToken).ConfigureAwait(false);
+            return await RunCoreAsync(options, secretMask, renderer, log, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -85,21 +121,18 @@ internal sealed class HttpFileRunner(
         catch (Exception exception)
         {
             // A stack trace helps nobody at a prompt; the type and message are enough to report a bug.
-            renderer.RenderError(Format(s_unexpectedErrorFormat, exception.GetType().Name, Detail(exception)));
+            renderer.RenderError(Messages.Format(s_unexpectedErrorFormat, exception.GetType().Name, Detail(exception)));
 
             return ExitCodes.NotSent;
         }
     }
-
-    private static string Format(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
-        string.Format(CultureInfo.CurrentCulture, format, arguments);
 
     // The message of an AggregateException quotes the messages of the exceptions it holds, which nothing has
     // vetted for display, so only their types are named.
     private static string Detail(Exception exception) =>
         exception is AggregateException aggregate
             ? string.Join(
-                NameSeparator,
+                Messages.ListSeparator,
                 aggregate.Flatten().InnerExceptions.Select(innerException => innerException.GetType().Name))
             : exception.Message;
 
@@ -118,68 +151,97 @@ internal sealed class HttpFileRunner(
 
     private static async Task<DotEnvFile> LoadDotEnvAsync(
         string httpFilePath,
+        DiagnosticLog log,
         CancellationToken cancellationToken)
     {
         string fullPath = Path.GetFullPath(httpFilePath);
         string httpFileDirectory = Path.GetDirectoryName(fullPath) ?? fullPath;
         string directory = ProjectLocator.FindProjectDirectory(httpFileDirectory) ?? httpFileDirectory;
 
-        return await DotEnvFile.LoadAsync(Path.Combine(directory, DotEnvFileName), cancellationToken)
+        DotEnvFile dotEnv = await DotEnvFile.LoadAsync(Path.Combine(directory, DotEnvFileName), cancellationToken)
             .ConfigureAwait(false);
-    }
 
-    private static string StatusText(ReceivedResponse response) =>
-        response.ReasonPhrase.Length == 0
-            ? response.StatusCode.ToString(CultureInfo.InvariantCulture)
-            : string.Create(CultureInfo.InvariantCulture, $"{response.StatusCode} {response.ReasonPhrase}");
+        // A missing file is not read; the $dotenv error names the path.
+        if (dotEnv.Values is not null)
+        {
+            log.Write(Messages.Format(s_verboseDotEnvFileFormat, dotEnv.Path));
+        }
+
+        return dotEnv;
+    }
 
     private async Task<int> RunCoreAsync(
         RunOptions options,
         SecretMask secretMask,
         ResponseRenderer renderer,
+        DiagnosticLog log,
         CancellationToken cancellationToken)
     {
         string filePath = options.FilePath;
         if (!File.Exists(filePath))
         {
-            throw new HttpFileException(Format(s_fileNotFoundFormat, filePath));
+            throw new HttpFileException(Messages.Format(s_fileNotFoundFormat, filePath));
         }
 
+        log.Write(Messages.Format(s_verboseHttpFileFormat, Path.GetFullPath(filePath)));
         HttpFile file = await ReadFilesAsync(() => HttpFileParser.LoadAsync(filePath, cancellationToken))
             .ConfigureAwait(false);
+
+        string? environmentFilePath = EnvironmentFileLocator.Find(filePath);
+        log.Write(environmentFilePath is null
+            ? Resources.VerboseNoEnvironmentFile
+            : Messages.Format(s_verboseEnvironmentFileFormat, environmentFilePath));
         EnvironmentSet environment = await ReadFilesAsync(() => EnvironmentLoader.LoadAsync(
-            EnvironmentFileLocator.Find(filePath),
+            environmentFilePath,
             options.EnvironmentName,
             filePath,
+            log.Write,
             cancellationToken)).ConfigureAwait(false);
+        log.Write(environment.SelectedName is null
+            ? Resources.VerboseNoEnvironment
+            : Messages.Format(s_verboseEnvironmentFormat, environment.SelectedName));
 
-        RequestDefinition target = SelectRequest(file, options.RequestName);
-        IReadOnlyList<RequestDefinition> plan = DependencyPlanner.Plan(file, target);
+        RequestDefinition target = await SelectRequestAsync(file, options.RequestName, cancellationToken)
+            .ConfigureAwait(false);
+        WarnOfUnusedVariables(file, options.Variables, renderer);
+        IReadOnlyList<RequestDefinition> plan = DependencyPlanner.Plan(file, target, options.Variables);
+        log.Write(Messages.Format(
+            s_verbosePlanFormat,
+            string.Join(
+                Messages.ListSeparator,
+                plan.Select(request => request.DisplayName))));
 
         ExchangeStore exchanges = new();
         VariableResolver resolver = new(
             file,
             environment,
-            providers,
-            CreateDynamicVariables(filePath),
+            createProviders(log),
+            CreateDynamicVariables(filePath, log),
             exchanges,
-            secretMask);
+            secretMask,
+            options.Variables);
 
         using HttpClient httpClient = ToolHttpClient.Create(createHandler(options.Insecure));
-        RequestSender sender = new(httpClient, secretMask, renderer.RenderNotice);
+        RequestSender sender = new(httpClient, secretMask, renderer.RenderRedirect);
 
         foreach (RequestDefinition dependency in plan.Take(plan.Count - 1))
         {
             HttpExchange exchange = await SendAsync(dependency).ConfigureAwait(false);
 
-            renderer.RenderDependency(dependency, exchange);
+            // The -v log already has a line for the exchange.
+            if (!options.Verbose)
+            {
+                renderer.RenderDependency(dependency, exchange);
+            }
+
+            RenderWrongTenantHint(renderer, exchange);
             if (!exchange.Response.IsSuccess)
             {
-                renderer.RenderError(Format(
+                renderer.RenderError(Messages.Format(
                     s_dependencyFailedFormat,
-                    dependency.Name,
-                    StatusText(exchange.Response),
-                    target.Name ?? $"{target.Method} {target.Url.Raw}"));
+                    dependency.DisplayName,
+                    ResponseRenderer.StatusText(exchange.Response),
+                    target.DisplayName));
 
                 return ExitCodes.ErrorStatus;
             }
@@ -187,6 +249,7 @@ internal sealed class HttpFileRunner(
 
         HttpExchange targetExchange = await SendAsync(target).ConfigureAwait(false);
         await renderer.RenderAsync(targetExchange, cancellationToken).ConfigureAwait(false);
+        RenderWrongTenantHint(renderer, targetExchange);
 
         return targetExchange.Response.IsSuccess ? ExitCodes.Success : ExitCodes.ErrorStatus;
 
@@ -200,7 +263,9 @@ internal sealed class HttpFileRunner(
             ReceivedResponse response;
             try
             {
-                response = await sender.SendAsync(resolved, warnings, cancellationToken).ConfigureAwait(false);
+                response = await sender
+                    .SendAsync(resolved, warnings, log.Write, cancellationToken)
+                    .ConfigureAwait(false);
             }
             finally
             {
@@ -210,6 +275,7 @@ internal sealed class HttpFileRunner(
                 }
             }
 
+            LogExchange(log, resolved, response);
             HttpExchange exchange = new(resolved, response);
             if (request.Name is not null)
             {
@@ -220,24 +286,109 @@ internal sealed class HttpFileRunner(
         }
     }
 
-    private RequestDefinition SelectRequest(HttpFile file, string? requestName)
+    private static void WarnOfUnusedVariables(
+        HttpFile file,
+        IReadOnlyDictionary<string, string>? overrides,
+        ResponseRenderer renderer)
+    {
+        if (overrides is null)
+        {
+            return;
+        }
+
+        HashSet<string> referenced = file.ReferencedVariableNames();
+        foreach (string name in overrides.Keys.Where(name => !referenced.Contains(name)))
+        {
+            renderer.RenderWarning(Messages.Format(s_varOptionNotUsedFormat, name, file.Path));
+        }
+    }
+
+    private static void RenderWrongTenantHint(ResponseRenderer renderer, HttpExchange exchange)
+    {
+        ReceivedResponse response = exchange.Response;
+        if (response.StatusCode != UnauthorizedStatusCode || !exchange.Request.UsesEntraAccessToken)
+        {
+            return;
+        }
+
+        bool isInChallenge = response.Headers.Any(header =>
+            HeaderNames.Is(header, HeaderNames.WwwAuthenticate)
+            && header.Value.Contains(WrongTenantCode, StringComparison.Ordinal));
+        if (isInChallenge || response.Body.Span.IndexOf(s_wrongTenantCodeUtf8) >= 0)
+        {
+            renderer.RenderHint(Resources.WrongTenantHint);
+        }
+    }
+
+    private static void LogExchange(DiagnosticLog log, ResolvedRequest request, ReceivedResponse response)
+    {
+        log.Write(Messages.Format(
+            s_verboseExchangeFormat,
+            request.Method,
+            request.DisplayUrl,
+            ResponseRenderer.StatusText(response),
+            ResponseRenderer.Milliseconds(response)));
+
+        // A body in a coding that is not decoded keeps its warning instead.
+        IReadOnlyList<string> codings = response.ContentCodings;
+        if (codings.Count > 0 && response.UnsupportedCodings.Count == 0)
+        {
+            log.Write(Messages.Format(s_verboseDecodedFormat, string.Join(Messages.ListSeparator, codings)));
+        }
+    }
+
+    // A name wins over a title, so a title never hides a request that has that name.
+    private static RequestDefinition? FindRequest(IReadOnlyList<RequestDefinition> requests, string requestName)
+    {
+        RequestDefinition? named = requests.FirstOrDefault(
+            request => string.Equals(request.Name, requestName, StringComparison.Ordinal));
+        if (named is not null)
+        {
+            return named;
+        }
+
+        RequestDefinition[] titled =
+        [
+            .. requests.Where(
+                request => string.Equals(request.Title, requestName, StringComparison.OrdinalIgnoreCase)),
+        ];
+        if (titled.Length > 1)
+        {
+            throw new HttpFileException(Messages.Format(
+                s_requestTitleAmbiguousFormat,
+                requestName,
+                string.Join(Messages.ListSeparator, titled.Select(request => request.Line))));
+        }
+
+        return titled.SingleOrDefault();
+    }
+
+    private async Task<RequestDefinition> SelectRequestAsync(
+        HttpFile file,
+        string? requestName,
+        CancellationToken cancellationToken)
     {
         IReadOnlyList<RequestDefinition> requests = file.Requests;
         if (requests.Count == 0)
         {
-            throw new HttpFileException(Format(s_noRequestsFormat, file.Path));
+            throw new HttpFileException(Messages.Format(s_noRequestsFormat, file.Path));
         }
 
-        string[] names = [.. requests.Select(request => request.Name).OfType<string>()];
-        string nameList = string.Join(NameSeparator, names);
+        string[] names =
+        [
+            .. requests
+                .SelectMany(request => (string?[])[request.Name, request.Title])
+                .OfType<string>()
+                .Distinct(StringComparer.Ordinal),
+        ];
+        string nameList = string.Join(Messages.ListSeparator, names);
 
         if (requestName is not null)
         {
-            return requests.FirstOrDefault(
-                    request => string.Equals(request.Name, requestName, StringComparison.Ordinal))
+            return FindRequest(requests, requestName)
                 ?? throw new HttpFileException(names.Length == 0
-                    ? Format(s_requestNameNotFoundNoneNamedFormat, requestName, file.Path)
-                    : Format(s_requestNameNotFoundFormat, requestName, file.Path, nameList));
+                    ? Messages.Format(s_requestNameNotFoundNoneNamedFormat, requestName, file.Path)
+                    : Messages.Format(s_requestNameNotFoundFormat, requestName, file.Path, nameList));
         }
 
         if (requests.Count == 1)
@@ -245,17 +396,18 @@ internal sealed class HttpFileRunner(
             return requests[0];
         }
 
-        if (!console.IsInputRedirected && !console.IsOutputRedirected)
+        if (!console.IsInputRedirected && !console.IsOutputRedirected && picker.CanPick)
         {
-            return picker.Pick(requests) ?? throw new HttpFileException(Resources.NoRequestSelected);
+            return await picker.PickAsync(requests, cancellationToken).ConfigureAwait(false)
+                ?? throw new HttpFileException(Resources.NoRequestSelected);
         }
 
         throw new HttpFileException(names.Length == 0
-            ? Format(s_multipleRequestsNoneNamedFormat, file.Path, requests.Count)
-            : Format(s_multipleRequestsNoNameFormat, file.Path, requests.Count, nameList));
+            ? Messages.Format(s_multipleRequestsNoneNamedFormat, file.Path, requests.Count)
+            : Messages.Format(s_multipleRequestsNoNameFormat, file.Path, requests.Count, nameList));
     }
 
-    private DynamicVariables CreateDynamicVariables(string httpFilePath)
+    private DynamicVariables CreateDynamicVariables(string httpFilePath, DiagnosticLog log)
     {
         // Kept as a task so that .env is read once however many expressions use it.
         Task<DotEnvFile>? dotEnv = null;
@@ -264,6 +416,7 @@ internal sealed class HttpFileRunner(
             timeProvider,
             Random.Shared,
             getEnvironmentVariable,
-            cancellationToken => dotEnv ??= ReadFilesAsync(() => LoadDotEnvAsync(httpFilePath, cancellationToken)));
+            cancellationToken => dotEnv ??= ReadFilesAsync(
+                () => LoadDotEnvAsync(httpFilePath, log, cancellationToken)));
     }
 }

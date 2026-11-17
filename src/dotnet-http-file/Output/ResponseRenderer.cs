@@ -5,26 +5,23 @@ using DotNetHttpFile.Execution;
 using DotNetHttpFile.Parsing;
 using DotNetHttpFile.Resolution;
 using Spectre.Console;
-using Spectre.Console.Rendering;
 
 namespace DotNetHttpFile.Output;
 
 /// <summary>
-/// Writes exchanges, warnings and errors to the console. Everything it displays goes through the secret mask
-/// and has its control characters made visible; only the response bytes of <see cref="OutputMode.Body"/> are
-/// written as received, with a warning when they hold a secret.
+/// Writes exchanges, warnings and errors to the console. What the tool says about the request it built, and its
+/// warnings and errors, go through the secret mask. The response is shown as the server sent it. Everything
+/// written as text has its control characters made visible; the response bytes of <see cref="OutputMode.Body"/>
+/// are written as received.
 /// </summary>
 internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secretMask, OutputMode mode)
 {
-    private const string AuthorizationHeader = "Authorization";
-    private const string ProxyAuthorizationHeader = "Proxy-Authorization";
-    private const string CookieHeader = "Cookie";
     private const int VersionFieldCount = 2;
-    private const string ControlCharacterPrefix = @"\x";
-    private const string ControlCharacterFormat = "X2";
-    private const int HexDigitCount = 2;
     private const int BytesPerKilobyte = 1024;
     private const int BytesPerMegabyte = BytesPerKilobyte * BytesPerKilobyte;
+
+    // The decimals of the F1 format a size is written with.
+    private const int SizeDecimals = 1;
 
     // The characters of an RFC 9110 token, which is what an authentication scheme is made of.
     private static readonly SearchValues<char> s_tokenCharacters = SearchValues.Create(
@@ -45,6 +42,8 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     private static readonly Style s_failureStyle = new(foreground: Color.Red);
     private static readonly Style s_warningStyle = new(foreground: Color.Yellow);
     private static readonly Style s_dependencyStyle = new(foreground: Color.Grey);
+    private static readonly Style s_headerNameStyle = new(foreground: Color.Teal);
+    private static readonly Style s_requestLineStyle = new(decoration: Decoration.Bold);
 
     /// <summary>
     /// Writes the one-line summary of a request that was sent because the selected request refers to it.
@@ -59,9 +58,9 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         long milliseconds = Milliseconds(exchange.Response);
         string line = string.Create(
             CultureInfo.InvariantCulture,
-            $"\u2192 {request.Name}  {sent.Method} {sent.DisplayUrl}  {status}  {milliseconds} ms");
+            $"\u2192 {request.DisplayName}  {sent.Method} {sent.DisplayUrl}  {status}  {milliseconds} ms");
 
-        WriteLines(mode == OutputMode.Full ? console.Output : console.Error, line, s_dependencyStyle);
+        WriteMaskedLines(mode == OutputMode.Full ? console.Output : console.Error, line, s_dependencyStyle);
     }
 
     /// <summary>
@@ -83,11 +82,7 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         ReceivedResponse response = exchange.Response;
         if (mode == OutputMode.Body)
         {
-            WriteLines(console.Error, StatusLine(response), StatusStyle(response));
-            if (secretMask.Contains(response.Body.Span))
-            {
-                RenderWarning(Resources.BodyContainsSecret);
-            }
+            ConsoleText.WriteLines(console.Error, StatusLine(response), StatusStyle(response));
 
             await console.StandardOutput.WriteAsync(response.Body, cancellationToken).ConfigureAwait(false);
             await console.StandardOutput.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -95,83 +90,83 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
             return;
         }
 
-        WriteLines(console.Output, ProtocolStatusText(response), StatusStyle(response));
+        ConsoleText.WriteLines(console.Output, ProtocolStatusText(response), StatusStyle(response));
         if (mode == OutputMode.Headers)
         {
             WriteHeaders(console.Output, response);
         }
     }
 
-    /// <summary>Writes <paramref name="message"/> to standard error as a note on what the run is doing.</summary>
-    public void RenderNotice(string message)
+    /// <summary>
+    /// Writes <paramref name="message"/>, the note that a redirect is followed, to standard error. It is not masked:
+    /// it reports the location the server sent.
+    /// </summary>
+    public void RenderRedirect(string message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        WriteLines(console.Error, message, s_dependencyStyle);
+        ConsoleText.WriteLines(console.Error, message, s_dependencyStyle);
     }
 
-    /// <summary>Writes <paramref name="message"/> to standard error as a warning.</summary>
+    /// <summary>
+    /// Writes <paramref name="message"/>, advice on a failed response, to standard error.
+    /// </summary>
+    public void RenderHint(string message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        WriteMaskedLines(console.Error, message, s_dependencyStyle);
+    }
+
+    /// <summary>
+    /// Writes <paramref name="message"/> to standard error as a warning.
+    /// </summary>
     public void RenderWarning(string message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        WriteLines(console.Error, Format(s_outputWarningFormat, message), s_warningStyle);
+        WriteMaskedLines(console.Error, Messages.Format(s_outputWarningFormat, message), s_warningStyle);
     }
 
-    /// <summary>Writes <paramref name="message"/> to standard error as an error.</summary>
+    /// <summary>
+    /// Writes <paramref name="message"/> to standard error as an error.
+    /// </summary>
     public void RenderError(string message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        WriteLines(console.Error, Format(s_outputErrorFormat, message), s_failureStyle);
+        WriteMaskedLines(console.Error, Messages.Format(s_outputErrorFormat, message), s_failureStyle);
     }
 
     /// <summary>
-    /// Replaces every C0 and C1 control character and DEL with its code as text, so that what a server sent
-    /// or a file holds cannot move the cursor, clear the screen or set the window title. A tab and a line break are kept; a
-    /// carriage return that no line feed follows is replaced, because it would overwrite the line.
+    /// The status code of <paramref name="response"/>, followed by its reason phrase when it has one.
     /// </summary>
-    internal static string WithVisibleControlCharacters(string text)
-    {
-        ArgumentNullException.ThrowIfNull(text);
+    internal static string StatusText(ReceivedResponse response) =>
+        response.ReasonPhrase.Length == 0
+            ? response.StatusCode.ToString(CultureInfo.InvariantCulture)
+            : string.Create(CultureInfo.InvariantCulture, $"{response.StatusCode} {response.ReasonPhrase}");
 
-        StringBuilder? builder = null;
-        for (int index = 0; index < text.Length; index++)
-        {
-            char character = text[index];
-            bool isKept = !char.IsControl(character)
-                || character is '\t' or '\n'
-                || (character == '\r' && index + 1 < text.Length && text[index + 1] == '\n');
+    /// <summary>
+    /// The time <paramref name="response"/> took, in whole milliseconds.
+    /// </summary>
+    internal static long Milliseconds(ReceivedResponse response) =>
+        (long)Math.Round(response.Elapsed.TotalMilliseconds, MidpointRounding.AwayFromZero);
 
-            if (isKept)
-            {
-                builder?.Append(character);
-                continue;
-            }
-
-            builder ??= new StringBuilder(text, 0, index, text.Length + ControlCharacterPrefix.Length + HexDigitCount);
-            builder.Append(ControlCharacterPrefix)
-                .Append(((int)character).ToString(ControlCharacterFormat, CultureInfo.InvariantCulture));
-        }
-
-        return builder?.ToString() ?? text;
-    }
-
-    private static string BodyDisplayText(ReceivedResponse response, Func<string, string> mask)
+    private static string BodyDisplayText(ReceivedResponse response)
     {
         string? contentType = response.ContentType;
 
         // A body still in a coding the tool does not decode is not what its content type says.
         if (!response.IsContentEncoded && BodyFormatter.IsText(contentType, response.Body.Span))
         {
-            return BodyFormatter.FormatForDisplay(contentType, response.Body, mask);
+            return BodyFormatter.FormatForDisplay(contentType, response.Body);
         }
 
         string size = FormatSize(response.Body.Length);
 
         return string.IsNullOrWhiteSpace(contentType)
-            ? Format(s_binaryBodySummaryNoContentTypeFormat, size)
-            : Format(s_binaryBodySummaryFormat, size, contentType);
+            ? Messages.Format(s_binaryBodySummaryNoContentTypeFormat, size)
+            : Messages.Format(s_binaryBodySummaryFormat, size, contentType);
     }
 
     private static string WithoutFinalLineBreak(string text)
@@ -187,12 +182,13 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     private static string RequestHeaderDisplayValue(KeyValuePair<string, string> header)
     {
         // A cookie has no scheme, and the first cookie pair must never be shown as one.
-        if (IsHeader(header, CookieHeader))
+        if (HeaderNames.Is(header, HeaderNames.Cookie))
         {
             return SecretMask.Placeholder;
         }
 
-        if (!IsHeader(header, AuthorizationHeader) && !IsHeader(header, ProxyAuthorizationHeader))
+        if (!HeaderNames.Is(header, HeaderNames.Authorization)
+            && !HeaderNames.Is(header, HeaderNames.ProxyAuthorization))
         {
             return header.Value;
         }
@@ -207,9 +203,6 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         return $"{value[..schemeLength]} {SecretMask.Placeholder}";
     }
 
-    private static bool IsHeader(KeyValuePair<string, string> header, string name) =>
-        string.Equals(header.Key, name, StringComparison.OrdinalIgnoreCase);
-
     private static string StatusLine(ReceivedResponse response)
     {
         string size = FormatSize(response.Body.Length);
@@ -222,14 +215,6 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     private static string ProtocolStatusText(ReceivedResponse response) =>
         $"HTTP/{response.HttpVersion.ToString(VersionFieldCount)} {StatusText(response)}";
 
-    private static string StatusText(ReceivedResponse response) =>
-        response.ReasonPhrase.Length == 0
-            ? response.StatusCode.ToString(CultureInfo.InvariantCulture)
-            : string.Create(CultureInfo.InvariantCulture, $"{response.StatusCode} {response.ReasonPhrase}");
-
-    private static long Milliseconds(ReceivedResponse response) =>
-        (long)Math.Round(response.Elapsed.TotalMilliseconds, MidpointRounding.AwayFromZero);
-
     private static Style StatusStyle(ReceivedResponse response) =>
         response.StatusCode switch
         {
@@ -238,18 +223,33 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
             _ => s_failureStyle,
         };
 
-    private static string FormatSize(long byteCount) =>
-        byteCount switch
+    private static string FormatSize(long byteCount)
+    {
+        if (byteCount < BytesPerKilobyte)
         {
-            < BytesPerKilobyte => string.Create(CultureInfo.InvariantCulture, $"{byteCount} B"),
-            < BytesPerMegabyte => string.Create(
-                CultureInfo.InvariantCulture,
-                $"{(double)byteCount / BytesPerKilobyte:F1} KB"),
-            _ => string.Create(CultureInfo.InvariantCulture, $"{(double)byteCount / BytesPerMegabyte:F1} MB"),
-        };
+            return string.Create(CultureInfo.InvariantCulture, $"{byteCount} B");
+        }
 
-    private static string Format(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
-        string.Format(CultureInfo.CurrentCulture, format, arguments);
+        // The unit is chosen for the number as printed: just under a megabyte would print as 1024.0 KB.
+        double kilobytes = Math.Round(
+            (double)byteCount / BytesPerKilobyte,
+            SizeDecimals,
+            MidpointRounding.AwayFromZero);
+
+        return kilobytes < BytesPerKilobyte
+            ? string.Create(CultureInfo.InvariantCulture, $"{kilobytes:F1} KB")
+            : string.Create(CultureInfo.InvariantCulture, $"{(double)byteCount / BytesPerMegabyte:F1} MB");
+    }
+
+    private static string HeaderLine(string name, string value) => $"{name}{ConsoleText.HeaderSeparator}{value}";
+
+    private static void WriteHeaders(IAnsiConsole target, ReceivedResponse response)
+    {
+        foreach (KeyValuePair<string, string> header in response.Headers)
+        {
+            ConsoleText.WriteHeader(target, HeaderLine(header.Key, header.Value), s_headerNameStyle);
+        }
+    }
 
     private void RenderFull(HttpExchange exchange)
     {
@@ -257,65 +257,32 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         ResolvedRequest request = exchange.Request;
         ReceivedResponse response = exchange.Response;
 
-        WriteLines(output, $"{request.Method} {request.DisplayUrl}");
+        WriteMaskedLines(output, $"{request.Method} {request.DisplayUrl}", s_requestLineStyle);
         foreach (KeyValuePair<string, string> header in request.Headers)
         {
-            WriteLines(output, $"{header.Key}: {RequestHeaderDisplayValue(header)}");
+            // The line is masked as a whole before the name is styled, so a secret that spans the name and the
+            // value is hidden, and the styling can never split one.
+            ConsoleText.WriteHeader(
+                output,
+                secretMask.Apply(HeaderLine(header.Key, RequestHeaderDisplayValue(header))),
+                s_headerNameStyle);
         }
 
-        WriteLines(output, string.Empty);
-        WriteLines(output, StatusLine(response), StatusStyle(response));
+        ConsoleText.WriteLines(output, string.Empty);
+        ConsoleText.WriteLines(output, StatusLine(response), StatusStyle(response));
         WriteHeaders(output, response);
-        WriteLines(output, string.Empty);
+        ConsoleText.WriteLines(output, string.Empty);
 
-        string body = WithoutFinalLineBreak(BodyDisplayText(response, secretMask.Apply));
+        string body = WithoutFinalLineBreak(BodyDisplayText(response));
         if (body.Length > 0)
         {
-            WriteLines(output, body);
-        }
-    }
-
-    private void WriteHeaders(IAnsiConsole target, ReceivedResponse response)
-    {
-        foreach (KeyValuePair<string, string> header in response.Headers)
-        {
-            WriteLines(target, $"{header.Key}: {header.Value}");
+            ConsoleText.WriteLines(output, body);
         }
     }
 
     // The text is masked as a whole and only then split into lines, so a secret that spans lines is hidden too.
     // Control characters are made visible after masking: a secret that holds one still matches as it was
     // registered, and text inserted after the match cannot become part of one.
-    private void WriteLines(IAnsiConsole target, string text, Style? style = null) =>
-        target.Write(new UnwrappedLines(WithVisibleControlCharacters(secretMask.Apply(text)), style));
-
-    /// <summary>
-    /// Text written with the line breaks it has and no others. Spectre's <see cref="Text"/> wraps at the console
-    /// width, which would break a header value or a body line that a piped capture must keep whole.
-    /// </summary>
-    private sealed class UnwrappedLines(string text, Style? style) : IRenderable
-    {
-        private readonly string[] _lines = text.Split('\n');
-
-        public Measurement Measure(RenderOptions options, int maxWidth)
-        {
-            int width = _lines.Max(line => new Segment(line).CellCount());
-
-            return new Measurement(width, width);
-        }
-
-        public IEnumerable<Segment> Render(RenderOptions options, int maxWidth)
-        {
-            foreach (string line in _lines)
-            {
-                string content = line.EndsWith('\r') ? line[..^1] : line;
-                if (content.Length > 0)
-                {
-                    yield return style is null ? new Segment(content) : new Segment(content, style.Value);
-                }
-
-                yield return Segment.LineBreak;
-            }
-        }
-    }
+    private void WriteMaskedLines(IAnsiConsole target, string text, Style? style = null) =>
+        ConsoleText.WriteLines(target, secretMask.Apply(text), style);
 }

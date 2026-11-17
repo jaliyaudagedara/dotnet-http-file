@@ -12,6 +12,7 @@ public sealed class VariableResolverTests
 {
     private const string FilePath = "test.http";
     private const string ProviderName = "Fake";
+    private const string EntraProviderName = EntraAccessTokenProvider.ProviderName;
     private const string Secret = "s3cret-value";
     private const int Seed = 42;
 
@@ -197,9 +198,10 @@ public sealed class VariableResolverTests
         await ResolveUrlAsync(resolver, file.Requests[0]);
 
         SecretRequest request = Assert.Single(provider.Requests);
+        string providerField = request.GetRequiredString(ProviderName, "provider");
         Assert.Equal(
             ("ApiToken", ProviderName, s_environmentFileDirectory),
-            (request.VariableName, request.GetRequiredString(ProviderName, "provider"), request.EnvironmentFileDirectory));
+            (request.VariableName, providerField, request.EnvironmentFileDirectory));
     }
 
     [Fact]
@@ -491,7 +493,10 @@ public sealed class VariableResolverTests
     public async Task ResolveRequestAsync_InvalidUrlHoldingSecret_MasksSecretInMessage()
     {
         HttpFile file = Parse("GET {{ApiToken}}/items?key={{ApiToken}}");
-        VariableResolver resolver = CreateResolver(file, ProviderEnvironment("ApiToken"), new FakeSecretProvider(Secret));
+        VariableResolver resolver = CreateResolver(
+            file,
+            ProviderEnvironment("ApiToken"),
+            new FakeSecretProvider(Secret));
 
         HttpFileException exception = await Assert.ThrowsAsync<HttpFileException>(
             () => resolver.ResolveRequestAsync(file.Requests[0], TestContext.Current.CancellationToken));
@@ -525,7 +530,10 @@ public sealed class VariableResolverTests
             "POST https://localhost/items?key={{ApiToken}}",
             "",
             "{{ApiToken}}");
-        VariableResolver resolver = CreateResolver(file, ProviderEnvironment("ApiToken"), new FakeSecretProvider(Secret));
+        VariableResolver resolver = CreateResolver(
+            file,
+            ProviderEnvironment("ApiToken"),
+            new FakeSecretProvider(Secret));
 
         ResolvedRequest resolved = await resolver.ResolveRequestAsync(
             file.Requests[0],
@@ -638,6 +646,134 @@ public sealed class VariableResolverTests
         Assert.Equal("Request 'login' has not been sent.", exception.Message);
     }
 
+    [Fact]
+    public async Task ResolveAsync_Override_BeatsFileVariableAndEnvironment()
+    {
+        HttpFile file = Parse(
+            "@a=file",
+            "GET https://localhost/{{a}}");
+        EnvironmentSet environment = CreateEnvironment("dev", ("a", new LiteralEnvironmentValue("env")));
+        VariableResolver resolver = CreateResolver(file, environment, overrides: Overrides(("a", "cli")));
+
+        string url = await ResolveUrlAsync(resolver, file.Requests[0]);
+
+        Assert.Equal("https://localhost/cli", url);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_Override_ReachesFileVariableThatRefersToIt()
+    {
+        HttpFile file = Parse(
+            "@url={{host}}/x",
+            "GET {{url}}");
+        VariableResolver resolver = CreateResolver(file, overrides: Overrides(("host", "https://h")));
+
+        string url = await ResolveUrlAsync(resolver, file.Requests[0]);
+
+        Assert.Equal("https://h/x", url);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_Override_IsLiteral()
+    {
+        HttpFile file = Parse("GET https://localhost/{{a}}");
+        VariableResolver resolver = CreateResolver(file, overrides: Overrides(("a", "{{b}}")));
+
+        string url = await ResolveUrlAsync(resolver, file.Requests[0]);
+
+        Assert.Equal("https://localhost/{{b}}", url);
+    }
+
+    [Fact]
+    public async Task ResolveRequest_EntraVariable_SetsUsesEntraAccessToken()
+    {
+        HttpFile file = Parse(
+            "GET https://localhost/items",
+            "Authorization: Bearer {{token}}");
+        VariableResolver resolver = CreateResolver(
+            file,
+            ProviderEnvironment("token", EntraProviderName),
+            new FakeSecretProvider(Secret, EntraProviderName));
+
+        ResolvedRequest resolved = await resolver.ResolveRequestAsync(
+            file.Requests[0],
+            TestContext.Current.CancellationToken);
+
+        Assert.True(resolved.UsesEntraAccessToken);
+    }
+
+    [Fact]
+    public async Task ResolveRequest_SecondUseOfCachedEntraValue_StillSetsIt()
+    {
+        HttpFile file = Parse(
+            "GET https://localhost/first",
+            "Authorization: Bearer {{token}}",
+            "",
+            "###",
+            "GET https://localhost/second",
+            "Authorization: Bearer {{token}}");
+        FakeSecretProvider provider = new(Secret, EntraProviderName);
+        VariableResolver resolver = CreateResolver(file, ProviderEnvironment("token", EntraProviderName), provider);
+
+        await resolver.ResolveRequestAsync(file.Requests[0], TestContext.Current.CancellationToken);
+        ResolvedRequest second = await resolver.ResolveRequestAsync(
+            file.Requests[1],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal((1, true), (provider.CallCount, second.UsesEntraAccessToken));
+    }
+
+    [Fact]
+    public async Task ResolveRequest_EntraVariableThroughCachedFileVariable_StillSetsIt()
+    {
+        HttpFile file = Parse(
+            "@authorization=Bearer {{token}}",
+            "GET https://localhost/first",
+            "Authorization: {{authorization}}",
+            "",
+            "###",
+            "GET https://localhost/second",
+            "Authorization: {{authorization}}");
+        VariableResolver resolver = CreateResolver(
+            file,
+            ProviderEnvironment("token", EntraProviderName),
+            new FakeSecretProvider(Secret, EntraProviderName));
+
+        await resolver.ResolveRequestAsync(file.Requests[0], TestContext.Current.CancellationToken);
+        ResolvedRequest second = await resolver.ResolveRequestAsync(
+            file.Requests[1],
+            TestContext.Current.CancellationToken);
+
+        Assert.True(second.UsesEntraAccessToken);
+    }
+
+    [Fact]
+    public async Task ResolveRequest_NoEntraVariable_LeavesItFalse()
+    {
+        HttpFile file = Parse(
+            "GET https://localhost/first",
+            "Authorization: Bearer {{ApiToken}}",
+            "",
+            "###",
+            "GET https://localhost/second");
+        VariableResolver resolver = CreateResolver(
+            file,
+            ProviderEnvironment("ApiToken"),
+            new FakeSecretProvider(Secret));
+
+        ResolvedRequest first = await resolver.ResolveRequestAsync(
+            file.Requests[0],
+            TestContext.Current.CancellationToken);
+        ResolvedRequest second = await resolver.ResolveRequestAsync(
+            file.Requests[1],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal((false, false), (first.UsesEntraAccessToken, second.UsesEntraAccessToken));
+    }
+
+    private static Dictionary<string, string> Overrides(params (string Name, string Value)[] values) =>
+        values.ToDictionary(value => value.Name, value => value.Value, StringComparer.Ordinal);
+
     private static HttpFile Parse(params string[] lines) =>
         HttpFileParser.Parse(FilePath, string.Join("\r\n", lines) + "\r\n");
 
@@ -649,13 +785,14 @@ public sealed class VariableResolverTests
         EnvironmentSet? environment = null,
         FakeSecretProvider? provider = null,
         ExchangeStore? exchanges = null,
-        SecretMask? secretMask = null)
+        SecretMask? secretMask = null,
+        IReadOnlyDictionary<string, string>? overrides = null)
     {
         DynamicVariables dynamicVariables = new(
             TimeProvider.System,
             new Random(Seed),
             _ => null,
-            _ => Task.FromResult(new DotEnvFile(".env", new Dictionary<string, string>())));
+            _ => Task.FromResult(new DotEnvFile(".env") { Values = new Dictionary<string, string>() }));
 
         return new VariableResolver(
             file,
@@ -663,7 +800,8 @@ public sealed class VariableResolverTests
             new SecretProviderRegistry(provider is null ? [] : [provider]),
             dynamicVariables,
             exchanges ?? new ExchangeStore(),
-            secretMask ?? new SecretMask());
+            secretMask ?? new SecretMask(),
+            overrides);
     }
 
     private static EnvironmentSet CreateEnvironment(
@@ -675,15 +813,15 @@ public sealed class VariableResolverTests
             availableNames: ["dev", "prod"],
             values.ToDictionary(value => value.Name, value => value.Value, StringComparer.Ordinal));
 
-    private static EnvironmentSet ProviderEnvironment(string variableName) =>
-        CreateEnvironment("dev", (variableName, ProviderValue()));
+    private static EnvironmentSet ProviderEnvironment(string variableName, string providerName = ProviderName) =>
+        CreateEnvironment("dev", (variableName, ProviderValue(providerName)));
 
-    private static ProviderEnvironmentValue ProviderValue() =>
+    private static ProviderEnvironmentValue ProviderValue(string providerName = ProviderName) =>
         new(
-            ProviderName,
+            providerName,
             new JsonObject
             {
-                ["provider"] = ProviderName,
+                ["provider"] = providerName,
             });
 
     private static ReceivedResponse JsonResponse(string body) =>
@@ -695,9 +833,9 @@ public sealed class VariableResolverTests
             Encoding.UTF8.GetBytes(body),
             TimeSpan.Zero);
 
-    private sealed class FakeSecretProvider(string secret) : ISecretProvider
+    private sealed class FakeSecretProvider(string secret, string name = ProviderName) : ISecretProvider
     {
-        public string Name => ProviderName;
+        public string Name => name;
 
         public int CallCount => Requests.Count;
 

@@ -8,7 +8,9 @@ internal static class VisualStudioCapture
 {
     public const string CaptureFileName = "capture.http";
 
-    /// <summary>The folder with <c>http-client.env.json.user</c>, which carries a provider value.</summary>
+    /// <summary>
+    /// The folder with <c>http-client.env.json.user</c>, which carries a provider value.
+    /// </summary>
     public const string UserEnvironmentFolder = "env-user";
 
     public static string DirectoryPath { get; } =

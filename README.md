@@ -7,7 +7,7 @@ access tokens come from your existing sign-in, so no token is pasted into a file
 
 Needs the .NET 11 SDK.
 
-```
+```bash
 dotnet tool install -g dotnet-http-file
 ```
 
@@ -15,33 +15,37 @@ Or run it without installing: `dnx dotnet-http-file MyApi.http --name getToDos`.
 
 ## Use
 
-```
+```bash
 dotnet http-file MyApi.http --name getToDos --env dev
 dotnet http-file MyApi.http --name getToDos --show status
 dotnet http-file MyApi.http --name getToDos | jq '.[0].title'
 ```
 
-In a terminal it prints the request, status, headers and formatted body, with secrets masked. When piped, it
-writes the raw body to stdout. Without `--name`, a terminal gets a request picker.
+In a terminal it prints the request, with secrets masked, then the response status, headers and formatted body
+as the server sent them. When piped, it writes the raw body to stdout. Without `--name`, a terminal gets a
+request picker.
 
-Try `samples/Basics/Basics.http` (no setup) or `samples/Entra/Entra.http` (needs `az login`).
+Try `samples/Basics/Named.http` and `samples/Basics/Titled.http` (no setup), or `samples/Entra/Entra.http` (needs
+`az login`).
 
 ## Options
 
 | Option | Meaning |
 |---|---|
-| `-n`, `--name <name>` | The request to run, from `# @name <name>`. |
+| `-n`, `--name <name>` | The request to run, from `# @name <name>` or a `### <title>`. |
 | `-e`, `--env <env>` | The environment in `http-client.env.json`. |
-| `--show <full\|body\|headers\|status>` | What to print. `-v` is `--show full`. |
+| `-v`, `--verbose` | Log what the tool does (files read, requests, tokens acquired) to stderr, never a token or secret-provider value. Changed in 0.2: it no longer means `--show full`. |
+| `--show <full\|body\|headers\|status>` | What to print. |
 | `-k`, `--insecure` | Skip server certificate validation. |
+| `--var <name=value>` | Set a variable for this run, over the file and the environment. Can be repeated; the last one wins. Names are case-sensitive, and a name no `{{name}}` in the file uses gets a warning. |
 
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
 | 0 | 2xx response. |
-| 1 | Non-2xx response, a dependency failed, or the body could not be decoded. |
-| 2 | Nothing was sent: bad arguments, parse error, undefined variable, provider or network failure. |
+| 1 | A non-2xx response from the selected request or from a request it depends on, or a response body that is not valid in its coding or decodes to more than 100 MiB. |
+| 2 | The selected request got no response: bad arguments, parse error, undefined variable, provider failure, network failure or timeout. Dependencies may already have been sent. Also any unexpected error in the tool. |
 | 130 | Cancelled with Ctrl+C. |
 
 ## Docs

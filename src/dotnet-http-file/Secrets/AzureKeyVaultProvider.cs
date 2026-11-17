@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -6,12 +5,20 @@ using Azure;
 using Azure.Core;
 using Azure.Identity;
 using Azure.Security.KeyVault.Secrets;
+using DotNetHttpFile.Output;
 
 namespace DotNetHttpFile.Secrets;
 
+/// <summary>
+/// Resolves a variable to a secret in Azure Key Vault, read with the shared credential.
+/// </summary>
+/// <param name="credential">The credential the Azure providers share.</param>
+/// <param name="createClient">Creates the client for a vault.</param>
+/// <param name="log">Receives the credential that supplied the token, when this provider gets the first one.</param>
 internal sealed partial class AzureKeyVaultProvider(
     Lazy<TokenCredential> credential,
-    Func<Uri, TokenCredential, SecretClient> createClient) : ISecretProvider
+    Func<Uri, TokenCredential, SecretClient> createClient,
+    DiagnosticLog? log = null) : ISecretProvider
 {
     public const string ProviderName = "AzureKeyVault";
 
@@ -52,9 +59,13 @@ internal sealed partial class AzureKeyVaultProvider(
         try
         {
             SecretClient client = createClient(vaultUri, credential.Value);
-            Response<KeyVaultSecret> response = await client
-                .GetSecretAsync(secretName, version: null, cancellationToken)
-                .ConfigureAwait(false);
+            Response<KeyVaultSecret> response;
+            using (AzureCredentialLog.Listen(log))
+            {
+                response = await client
+                    .GetSecretAsync(secretName, version: null, cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             return response.Value.Value;
         }
@@ -85,8 +96,7 @@ internal sealed partial class AzureKeyVaultProvider(
         {
             // CredentialUnavailableException derives from AuthenticationFailedException, so this covers both.
             throw new HttpFileException(
-                string.Format(
-                    CultureInfo.CurrentCulture,
+                Messages.Format(
                     s_keyVaultSignInFailedFormat,
                     request.VariableName,
                     vaultName,
@@ -114,8 +124,7 @@ internal sealed partial class AzureKeyVaultProvider(
         string vaultName = resourceId[(resourceId.LastIndexOf(ResourceIdSeparator) + 1)..];
         if (!VaultNamePattern.IsMatch(vaultName))
         {
-            throw new HttpFileException(
-                string.Format(CultureInfo.CurrentCulture, s_keyVaultInvalidResourceIdFormat, variableName));
+            throw new HttpFileException(Messages.Format(s_keyVaultInvalidResourceIdFormat, variableName));
         }
 
         return vaultName;
@@ -132,6 +141,6 @@ internal sealed partial class AzureKeyVaultProvider(
             _ => s_keyVaultRequestFailedFormat,
         };
 
-        return string.Format(CultureInfo.CurrentCulture, format, variableName, vaultName, secretName, status);
+        return Messages.Format(format, variableName, vaultName, secretName, status);
     }
 }

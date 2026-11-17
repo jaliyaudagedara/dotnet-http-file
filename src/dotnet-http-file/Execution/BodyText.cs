@@ -6,7 +6,9 @@ using System.Xml;
 
 namespace DotNetHttpFile.Execution;
 
-/// <summary>How the tool reads a body as text, shared by reference evaluation and display.</summary>
+/// <summary>
+/// How the tool reads a body as text, shared by reference evaluation and display.
+/// </summary>
 internal static class BodyText
 {
     private const int IndentSize = 2;
@@ -32,7 +34,9 @@ internal static class BodyText
         AllowDuplicateProperties = false,
     };
 
-    /// <summary>Refuses a DOCTYPE outright, which rules out external entities and entity expansion.</summary>
+    /// <summary>
+    /// Refuses a DOCTYPE outright, which rules out external entities and entity expansion.
+    /// </summary>
     public static XmlReaderSettings XmlReaderSettings { get; } = new()
     {
         DtdProcessing = DtdProcessing.Prohibit,
@@ -68,7 +72,11 @@ internal static class BodyText
 
         try
         {
-            return Encoding.GetEncoding(mediaType.CharSet.Trim('"'));
+            string charset = mediaType.CharSet.Trim('"');
+
+            // Encoding.GetEncoding knows only the Unicode encodings, ASCII and Latin-1. The code pages are asked
+            // here instead of being registered, which would change Encoding.GetEncoding for the whole process.
+            return CodePagesEncodingProvider.Instance.GetEncoding(charset) ?? Encoding.GetEncoding(charset);
         }
         catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
         {

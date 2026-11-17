@@ -1,9 +1,14 @@
+using System.Buffers.Text;
+using System.Text;
 using Azure.Core;
 using Azure.Identity;
+using DotNetHttpFile.Output;
 using DotNetHttpFile.Secrets;
+using Spectre.Console.Testing;
 
 namespace DotNetHttpFile.Tests.Secrets;
 
+[Collection(AzureIdentityEventGroup.Name)]
 public sealed class EntraAccessTokenProviderTests
 {
     private const string VariableName = "ApiToken";
@@ -51,7 +56,7 @@ public sealed class EntraAccessTokenProviderTests
 
         string expected = string.Join(
             Environment.NewLine,
-            "ApiToken (EntraAccessToken): could not get an access token.",
+            "Variable 'ApiToken' (EntraAccessToken): could not get an access token.",
             "  scope:  api://myapi/.default",
             "  tenant: 11111111-2222-3333-4444-555555555555",
             "  tried:  DefaultAzureCredential failed to retrieve a token.",
@@ -69,7 +74,7 @@ public sealed class EntraAccessTokenProviderTests
 
         string expected = string.Join(
             Environment.NewLine,
-            "ApiToken (EntraAccessToken): could not get an access token.",
+            "Variable 'ApiToken' (EntraAccessToken): could not get an access token.",
             "  scope:  api://myapi/.default",
             "  tenant: default",
             "  tried:  DefaultAzureCredential failed to retrieve a token.",
@@ -120,6 +125,7 @@ public sealed class EntraAccessTokenProviderTests
     [Theory]
     [InlineData("""{ "provider": "EntraAccessToken", "scope": "api://myapi/.default", "tenantId": 5 }""")]
     [InlineData("""{ "provider": "EntraAccessToken", "scope": "api://myapi/.default", "tenantId": "" }""")]
+    [InlineData("""{ "provider": "EntraAccessToken", "scope": "api://myapi/.default", "tenantId": "  " }""")]
     public async Task ResolveAsync_EntraAccessTokenTenantNotAString_Throws(string definitionJson)
     {
         FakeTokenCredential credential = new();
@@ -128,7 +134,7 @@ public sealed class EntraAccessTokenProviderTests
             () => ResolveAsync(credential, definitionJson));
 
         Assert.Equal(
-            "Variable 'ApiToken' (EntraAccessToken) has an invalid 'tenantId'. Expected a non-empty string.",
+            "Variable 'ApiToken' (EntraAccessToken) has an invalid 'tenantId'. Expected a string that is not blank.",
             exception.Message);
     }
 
@@ -186,9 +192,107 @@ public sealed class EntraAccessTokenProviderTests
         Assert.Equal(tenantId, requestContext.TenantId);
     }
 
-    private static Task<string> ResolveAsync(FakeTokenCredential credential, string definitionJson)
+    [Fact]
+    public async Task ResolveAsync_LogEnabled_LogsScopeTenantAndExpiry()
     {
-        EntraAccessTokenProvider provider = new(new Lazy<TokenCredential>(credential));
+        string token = Jwt($$"""{"tid":"{{TenantId}}","aud":"api://myapi"}""");
+        FakeTokenCredential credential = new(token)
+        {
+            ExpiresOn = new DateTimeOffset(2026, 11, 17, 22, 20, 30, TimeSpan.FromHours(12)),
+        };
+        using TestConsole error = new();
+
+        await ResolveAsync(credential, DefinitionWithoutTenant, new DiagnosticLog(error) { IsEnabled = true });
+
+        string expected = $"verbose: Token for {Scope}: tenant {TenantId}, expires 2026-11-17 10:20:30Z";
+        Assert.Equal([expected], Lines(error.Output));
+        Assert.DoesNotContain(token.Split('.')[2], error.Output, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("not-a-jwt")]
+    [InlineData("header.%%%.signature")]
+    [InlineData("header.WzFd.signature")]
+    [InlineData("header.eyJ0aWQiOjV9.signature")]
+    [InlineData("header.eyJ0aWQiOiJhIiwidGlkIjoiYiJ9.signature")]
+    [InlineData("header.eyJ0aWQiOiJcdWQ4MDAifQ.signature")]
+    [InlineData("a.eyJ0aWQiOiJ4In0.b.c")]
+    public async Task ResolveAsync_LogEnabledTokenWithoutReadableTenant_LogsUnknownTenant(string token)
+    {
+        FakeTokenCredential credential = new(token) { ExpiresOn = DateTimeOffset.UnixEpoch };
+        using TestConsole error = new();
+
+        await ResolveAsync(credential, DefinitionWithoutTenant, new DiagnosticLog(error) { IsEnabled = true });
+
+        Assert.Equal(
+            [$"verbose: Token for {Scope}: tenant unknown, expires 1970-01-01 00:00:00Z"],
+            Lines(error.Output));
+    }
+
+    [Fact]
+    public async Task ResolveAsync_LogDisabled_WritesNothing()
+    {
+        FakeTokenCredential credential = new(Jwt($$"""{"tid":"{{TenantId}}"}"""));
+        using TestConsole error = new();
+
+        await ResolveAsync(credential, DefinitionWithoutTenant, new DiagnosticLog(error));
+
+        Assert.Empty(error.Output);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_LogEnabledTokenFails_WritesNothing()
+    {
+        FakeTokenCredential credential = new(failure: new CredentialUnavailableException(CredentialMessage));
+        using TestConsole error = new();
+
+        await Assert.ThrowsAsync<HttpFileException>(() => ResolveAsync(
+            credential,
+            DefinitionWithoutTenant,
+            new DiagnosticLog(error) { IsEnabled = true }));
+
+        Assert.Empty(error.Output);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_LogEnabledCredentialSelected_LogsTheCredentialThenTheToken()
+    {
+        FakeTokenCredential credential = new() { SelectedCredential = "Azure.Identity.AzureCliCredential" };
+        using TestConsole error = new();
+
+        await ResolveAsync(credential, DefinitionWithoutTenant, new DiagnosticLog(error) { IsEnabled = true });
+
+        Assert.Equal(
+            [
+                "verbose: Credential: AzureCliCredential",
+                $"verbose: Token for {Scope}: tenant unknown, expires 9999-12-31 23:59:59Z",
+            ],
+            Lines(error.Output));
+    }
+
+    [Fact]
+    public async Task ResolveAsync_LogDisabledCredentialSelected_WritesNothing()
+    {
+        FakeTokenCredential credential = new() { SelectedCredential = "Azure.Identity.AzureCliCredential" };
+        using TestConsole error = new();
+
+        await ResolveAsync(credential, DefinitionWithoutTenant, new DiagnosticLog(error));
+
+        Assert.Empty(error.Output);
+    }
+
+    private static string Jwt(string payloadJson) =>
+        $"eyJhbGciOiJub25lIn0.{Base64Url.EncodeToString(Encoding.UTF8.GetBytes(payloadJson))}.signature-part-xyz";
+
+    private static string[] Lines(string text) =>
+        text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n')[..^1];
+
+    private static Task<string> ResolveAsync(
+        FakeTokenCredential credential,
+        string definitionJson,
+        DiagnosticLog? log = null)
+    {
+        EntraAccessTokenProvider provider = new(new Lazy<TokenCredential>(credential), log);
 
         return provider.ResolveAsync(
             SecretRequestFactory.Create(VariableName, definitionJson),

@@ -38,7 +38,9 @@ internal static class ToolHttpClient
         return handler;
     }
 
-    /// <summary>Creates the client for <paramref name="handler"/>, which the client then owns.</summary>
+    /// <summary>
+    /// Creates the client for <paramref name="handler"/>, which the client then owns.
+    /// </summary>
     public static HttpClient Create(HttpMessageHandler handler)
     {
         ArgumentNullException.ThrowIfNull(handler);

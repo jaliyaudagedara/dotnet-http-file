@@ -2,7 +2,9 @@ using System.IO.Compression;
 
 namespace DotNetHttpFile.Tests.Support;
 
-/// <summary>Compresses test content the way a server would.</summary>
+/// <summary>
+/// Compresses test content the way a server would.
+/// </summary>
 internal static class Compression
 {
     public static byte[] Gzip(ReadOnlySpan<byte> content)
@@ -49,7 +51,9 @@ internal static class Compression
         return output.ToArray();
     }
 
-    /// <summary>Gzip of <paramref name="length"/> zero bytes, written in chunks so the content is never held.</summary>
+    /// <summary>
+    /// Gzip of <paramref name="length"/> zero bytes, written in chunks so the content is never held.
+    /// </summary>
     public static byte[] GzipZeros(long length)
     {
         byte[] chunk = new byte[1024 * 1024];

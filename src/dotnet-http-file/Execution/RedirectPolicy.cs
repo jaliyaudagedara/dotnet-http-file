@@ -10,13 +10,10 @@ namespace DotNetHttpFile.Execution;
 /// </summary>
 internal static class RedirectPolicy
 {
-    /// <summary>The default of <see cref="SocketsHttpHandler.MaxAutomaticRedirections"/>.</summary>
+    /// <summary>
+    /// The default of <see cref="SocketsHttpHandler.MaxAutomaticRedirections"/>.
+    /// </summary>
     public const int MaxRedirects = 50;
-
-    private const string AuthorizationHeader = "Authorization";
-    private const string ProxyAuthorizationHeader = "Proxy-Authorization";
-    private const string CookieHeader = "Cookie";
-    private const string TransferEncodingHeader = "Transfer-Encoding";
 
     /// <summary>
     /// Creates the request that follows <paramref name="response"/>, or returns null when the response is
@@ -31,8 +28,7 @@ internal static class RedirectPolicy
         ArgumentNullException.ThrowIfNull(response);
         ArgumentNullException.ThrowIfNull(secretMask);
 
-        Uri? location = GetLocation(request.Url, response);
-        if (location is null)
+        if (GetLocation(request.Url, response) is not (Uri location, bool takesRequestParts))
         {
             return null;
         }
@@ -51,7 +47,7 @@ internal static class RedirectPolicy
         {
             KeyValuePair<string, string> header = request.Headers[index];
             bool isDropped = (!isSameOrigin && CanHoldCredential(header, secretMask))
-                || (isChangedToGet && IsHeader(header, TransferEncodingHeader));
+                || (isChangedToGet && HeaderNames.Is(header, HeaderNames.TransferEncoding));
 
             if (!isDropped)
             {
@@ -66,12 +62,13 @@ internal static class RedirectPolicy
             Url = location,
             Headers = headers,
             Body = isChangedToGet ? null : request.Body,
-            DisplayUrl = secretMask.Apply(location.AbsoluteUri),
+            DisplayUrl = takesRequestParts ? secretMask.Apply(location.AbsoluteUri) : location.AbsoluteUri,
             HeaderLines = headerLines,
         };
     }
 
-    private static Uri? GetLocation(Uri requestUrl, HttpResponseMessage response)
+    // TakesRequestParts says whether the location holds parts of the request URL, which may be secrets.
+    private static (Uri Location, bool TakesRequestParts)? GetLocation(Uri requestUrl, HttpResponseMessage response)
     {
         bool isRedirect = response.StatusCode
             is HttpStatusCode.MultipleChoices
@@ -87,22 +84,25 @@ internal static class RedirectPolicy
             return null;
         }
 
+        bool takesRequestParts = false;
         if (!location.IsAbsoluteUri)
         {
             location = new Uri(requestUrl, location);
+            takesRequestParts = true;
         }
 
         // RFC 9110 section 10.2.2: a location without a fragment inherits the one of the request.
         if (requestUrl.Fragment.Length > 0 && location.Fragment.Length == 0)
         {
             location = new UriBuilder(location) { Fragment = requestUrl.Fragment }.Uri;
+            takesRequestParts = true;
         }
 
         // As HttpClient: never from https down to http, and to no other scheme.
         bool isAllowedScheme = location.Scheme == Uri.UriSchemeHttps
             || (location.Scheme == Uri.UriSchemeHttp && requestUrl.Scheme != Uri.UriSchemeHttps);
 
-        return isAllowedScheme ? location : null;
+        return isAllowedScheme ? (location, takesRequestParts) : null;
     }
 
     // As HttpClient and browsers: a POST becomes a GET on 300, 301 and 302, and so does every method but GET
@@ -120,11 +120,8 @@ internal static class RedirectPolicy
         string.Equals(method, expected.Method, StringComparison.OrdinalIgnoreCase);
 
     private static bool CanHoldCredential(KeyValuePair<string, string> header, SecretMask secretMask) =>
-        IsHeader(header, AuthorizationHeader)
-        || IsHeader(header, ProxyAuthorizationHeader)
-        || IsHeader(header, CookieHeader)
+        HeaderNames.Is(header, HeaderNames.Authorization)
+        || HeaderNames.Is(header, HeaderNames.ProxyAuthorization)
+        || HeaderNames.Is(header, HeaderNames.Cookie)
         || !string.Equals(secretMask.Apply(header.Value), header.Value, StringComparison.Ordinal);
-
-    private static bool IsHeader(KeyValuePair<string, string> header, string name) =>
-        string.Equals(header.Key, name, StringComparison.OrdinalIgnoreCase);
 }

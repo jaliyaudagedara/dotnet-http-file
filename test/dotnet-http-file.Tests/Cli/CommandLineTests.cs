@@ -18,7 +18,7 @@ public sealed class CommandLineTests
         int exitCode = await harness.InvokeAsync(path);
 
         Assert.Equal(ExitCodes.Success, exitCode);
-        Assert.Equal(new RunOptions(path, null, null, null, Insecure: false), Assert.Single(harness.Runs));
+        Assert.Equal(new RunOptions(path), Assert.Single(harness.Runs));
         Assert.Empty(harness.Error.Output);
     }
 
@@ -30,7 +30,13 @@ public sealed class CommandLineTests
 
         await harness.InvokeAsync(path, "--name", "todos", "--env", "dev", "--verbose", "--insecure");
 
-        RunOptions expected = new(path, "todos", "dev", OutputMode.Full, Insecure: true);
+        RunOptions expected = new(path)
+        {
+            RequestName = "todos",
+            EnvironmentName = "dev",
+            Insecure = true,
+            Verbose = true,
+        };
         Assert.Equal(expected, Assert.Single(harness.Runs));
     }
 
@@ -42,19 +48,164 @@ public sealed class CommandLineTests
 
         await harness.InvokeAsync("-n", "todos", "-e", "dev", "--show", "body", "-k", path);
 
-        RunOptions expected = new(path, "todos", "dev", OutputMode.Body, Insecure: true);
+        RunOptions expected = new(path)
+        {
+            RequestName = "todos",
+            EnvironmentName = "dev",
+            ForcedMode = OutputMode.Body,
+            Insecure = true,
+        };
         Assert.Equal(expected, Assert.Single(harness.Runs));
     }
 
     [Fact]
-    public async Task Main_VerboseShortOption_ForcesFullMode()
+    public async Task Verbose_DoesNotForceAMode()
     {
         using Harness harness = new();
         string path = await harness.WriteFileAsync(HttpFileName);
 
         await harness.InvokeAsync(path, "-v");
 
-        Assert.Equal(OutputMode.Full, Assert.Single(harness.Runs).ForcedMode);
+        RunOptions options = Assert.Single(harness.Runs);
+        Assert.Equal(((OutputMode?)null, true), (options.ForcedMode, options.Verbose));
+    }
+
+    [Fact]
+    public async Task Main_VarRepeated_ParsesEach()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        await harness.InvokeAsync(path, "--var", "a=1", "--var", "b=2");
+
+        Assert.Equal(
+            new Dictionary<string, string>
+            {
+                ["a"] = "1",
+                ["b"] = "2",
+            },
+            Assert.Single(harness.Runs).Variables);
+    }
+
+    [Fact]
+    public async Task Main_VarValueWithEqualsOrEmpty_KeepsIt()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        await harness.InvokeAsync(path, "--var", "a==b", "--var", "c=");
+
+        Assert.Equal(
+            new Dictionary<string, string>
+            {
+                ["a"] = "=b",
+                ["c"] = string.Empty,
+            },
+            Assert.Single(harness.Runs).Variables);
+    }
+
+    [Fact]
+    public async Task Main_VarSameNameTwice_LastWins()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        await harness.InvokeAsync(path, "--var", "a=1", "--var", "a=2");
+
+        Assert.Equal(
+            new Dictionary<string, string>
+            {
+                ["a"] = "2",
+            },
+            Assert.Single(harness.Runs).Variables);
+    }
+
+    [Fact]
+    public async Task Main_VarNamesDifferingInCase_AreSeparate()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        await harness.InvokeAsync(path, "--var", "a=1", "--var", "A=2");
+
+        Assert.Equal(2, Assert.Single(harness.Runs).Variables?.Count);
+    }
+
+    [Fact]
+    public async Task Main_VarBeforeFile_TakesOnlyOneArgument()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync("--var", "a=1", path);
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(path, Assert.Single(harness.Runs).FilePath);
+    }
+
+    [Fact]
+    public async Task Main_NoVar_LeavesVariablesNull()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        await harness.InvokeAsync(path);
+
+        Assert.Null(Assert.Single(harness.Runs).Variables);
+    }
+
+    [Theory]
+    [InlineData("s3cretvalue")]
+    [InlineData("=s3cretvalue")]
+    public async Task Main_VarWithoutName_ReturnsNotSentWithoutEchoingTheValue(string token)
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--var", token);
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(["error: --var needs name=value."], harness.ErrorLines);
+        Assert.Empty(harness.Runs);
+    }
+
+    [Fact]
+    public async Task Main_VarWithInvalidName_ReturnsNotSentNamingOnlyTheName()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--var", "a b=s3cret");
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(["error: --var 'a b' is not name=value."], harness.ErrorLines);
+        Assert.Empty(harness.Runs);
+    }
+
+    [Fact]
+    public async Task Main_VarWithoutValue_ReturnsNotSent()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--var");
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Contains("--var", Assert.Single(harness.ErrorLines), StringComparison.Ordinal);
+        Assert.Empty(harness.Runs);
+    }
+
+    [Fact]
+    public async Task Main_BareVarAfterAValidOne_ReturnsNotSentWithoutEchoingAValue()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--var", "a=s3cret", "--var");
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(["error: --var needs name=value."], harness.ErrorLines);
+        Assert.Empty(harness.Runs);
     }
 
     [Theory]
@@ -160,6 +311,66 @@ public sealed class CommandLineTests
         Assert.Empty(harness.Runs);
     }
 
+    [Theory]
+    [InlineData("--key=secret", "--key")]
+    [InlineData("--key:secret", "--key")]
+    [InlineData("--vra=token=secret", "--vra")]
+    [InlineData("-x:secret=more", "-x")]
+    public async Task Main_UnknownOptionWithAttachedValue_ReportsOnlyTheOptionName(string token, string expected)
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(token, path);
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal([$"error: Unrecognized option '{expected}'."], harness.ErrorLines);
+        Assert.DoesNotContain("secret", harness.Error.Output, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("--key=secret", "--key")]
+    [InlineData("--key:secret", "--key")]
+    [InlineData("-x:secret=more", "-x")]
+    public async Task Main_UnknownOptionWithAttachedValueAfterTheFile_ReportsOnlyTheOptionName(
+        string token,
+        string expected)
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--name", "getToDos", token);
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal([$"error: Unrecognized option '{expected}'."], harness.ErrorLines);
+        Assert.DoesNotContain("secret", harness.Error.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Main_KnownOptionWithAttachedInvalidValue_KeepsTheParserMessage()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--name", "getToDos", "--show=bogus");
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal("error: Argument 'bogus' not recognized. Must be one of:", harness.ErrorLines[0]);
+        Assert.DoesNotContain("Unrecognized option", harness.Error.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Main_StrayArgumentAfterTheFile_IsEchoedAsTyped()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "b=S3CRET:x");
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(["error: Unrecognized command or argument 'b=S3CRET:x'."], harness.ErrorLines);
+    }
+
     [Fact]
     public async Task Main_UnknownOptionAlone_ReportsTheOption()
     {
@@ -176,11 +387,16 @@ public sealed class CommandLineTests
     {
         using Harness harness = new();
         string path = await harness.WriteFileAsync(HttpFileName);
+        RunOptions expected = new(path)
+        {
+            RequestName = "@x",
+            EnvironmentName = "@dev",
+        };
 
         int exitCode = await harness.InvokeAsync(path, "--name", "@x", "--env", "@dev");
 
         Assert.Equal(ExitCodes.Success, exitCode);
-        Assert.Equal(new RunOptions(path, "@x", "@dev", null, Insecure: false), Assert.Single(harness.Runs));
+        Assert.Equal(expected, Assert.Single(harness.Runs));
         Assert.Empty(harness.Error.Output);
     }
 
@@ -250,21 +466,19 @@ public sealed class CommandLineTests
         Assert.Empty(harness.Runs);
     }
 
-    [Theory]
-    [InlineData("body")]
-    [InlineData("full")]
-    [InlineData("headers")]
-    [InlineData("status")]
-    public async Task Main_VerboseAndShow_ReturnsNotSent(string value)
+    [Fact]
+    public async Task Verbose_WithShow_IsAllowed()
     {
         using Harness harness = new();
         string path = await harness.WriteFileAsync(HttpFileName);
 
-        int exitCode = await harness.InvokeAsync(path, "--verbose", "--show", value);
+        int exitCode = await harness.InvokeAsync(path, "-v", "--show", "body");
 
-        Assert.Equal(ExitCodes.NotSent, exitCode);
-        Assert.Equal(["error: --verbose and --show cannot be used together."], harness.ErrorLines);
-        Assert.Empty(harness.Runs);
+        RunOptions options = Assert.Single(harness.Runs);
+        Assert.Equal(
+            (ExitCodes.Success, OutputMode.Body, true),
+            (exitCode, options.ForcedMode, options.Verbose));
+        Assert.Empty(harness.Error.Output);
     }
 
     [Fact]
@@ -379,6 +593,29 @@ public sealed class CommandLineTests
     }
 
     [Fact]
+    public async Task Main_Help_DescribesInsecureAsWhatTheOptionDoes()
+    {
+        using Harness harness = new();
+
+        await harness.InvokeAsync("--help");
+
+        Assert.Contains("Skips server certificate validation.", harness.Output.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Main_Help_SaysVarValuesAreNotMasked()
+    {
+        using Harness harness = new();
+
+        await harness.InvokeAsync("--help");
+
+        Assert.Contains(
+            "Values are not masked; for a secret, use a secret provider in the environment file.",
+            harness.Output.Output,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Main_Version_PrintsVersionAndReturnsSuccess()
     {
         using Harness harness = new();
@@ -398,7 +635,8 @@ public sealed class CommandLineTests
         AssemblyInformationalVersionAttribute? attribute = typeof(CommandLine).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>();
 
-        Assert.Equal("0.1.0", attribute?.InformationalVersion);
+        Assert.NotNull(attribute?.InformationalVersion);
+        Assert.True(Version.TryParse(attribute.InformationalVersion, out _));
     }
 
     private sealed class Harness : IDisposable
@@ -421,10 +659,14 @@ public sealed class CommandLineTests
 
         public List<RunOptions> Runs { get; } = [];
 
-        /// <summary>What a run does with the token it is given. By default it returns success at once.</summary>
+        /// <summary>
+        /// What a run does with the token it is given. By default it returns success at once.
+        /// </summary>
         public Func<CancellationToken, Task<int>> Run { get; init; } = _ => Task.FromResult(ExitCodes.Success);
 
-        /// <summary>The token given to the command line.</summary>
+        /// <summary>
+        /// The token given to the command line.
+        /// </summary>
         public CancellationToken CancellationToken { get; init; } = TestContext.Current.CancellationToken;
 
         public string[] ErrorLines

@@ -4,7 +4,9 @@ namespace DotNetHttpFile.Tests.Execution;
 
 internal static class ResolvedRequestFactory
 {
-    /// <summary>Creates a request whose display URL is the URL it is sent to.</summary>
+    /// <summary>
+    /// Creates a request whose display URL is the URL it is sent to.
+    /// </summary>
     public static ResolvedRequest Create(
         string method,
         Uri url,
@@ -14,11 +16,11 @@ internal static class ResolvedRequestFactory
         new(
             method,
             url,
-            httpVersion,
             [.. headers.Select(header => KeyValuePair.Create(header.Name, header.Value))],
-            body)
+            url.OriginalString)
         {
-            DisplayUrl = url.OriginalString,
+            HttpVersion = httpVersion,
+            Body = body,
             HeaderLines = [.. headers.Select(header => header.Line)],
         };
 }

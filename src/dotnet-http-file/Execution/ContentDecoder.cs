@@ -1,14 +1,21 @@
+using System.Buffers;
 using System.IO.Compression;
 
 namespace DotNetHttpFile.Execution;
 
-/// <summary>Decodes a response body from the content codings the tool supports, gzip and deflate.</summary>
+/// <summary>
+/// Decodes a response body from the content codings the tool supports, gzip and deflate.
+/// </summary>
 internal static class ContentDecoder
 {
-    /// <summary>The most bytes a body may decode to, 100 MiB.</summary>
+    /// <summary>
+    /// The most bytes a body may decode to, 100 MiB.
+    /// </summary>
     public const int MaxDecodedLength = MaxDecodedMebibytes * BytesPerMebibyte;
 
-    /// <summary><see cref="MaxDecodedLength"/> in MiB, for messages.</summary>
+    /// <summary>
+    /// <see cref="MaxDecodedLength"/> in MiB, for messages.
+    /// </summary>
     public const int MaxDecodedMebibytes = 100;
 
     private const int BytesPerMebibyte = 1024 * 1024;
@@ -26,7 +33,12 @@ internal static class ContentDecoder
     private const int ZlibMaxWindow = 7;
     private const int ZlibHeaderCheckDivisor = 31;
 
-    /// <summary>Whether <paramref name="coding"/> is one the tool decodes.</summary>
+    // RFC 1952: each member of a gzip body starts with these two bytes.
+    private static readonly byte[] s_gzipMemberStart = [0x1F, 0x8B];
+
+    /// <summary>
+    /// Whether <paramref name="coding"/> is one the tool decodes.
+    /// </summary>
     public static bool IsSupported(string coding)
     {
         ArgumentNullException.ThrowIfNull(coding);
@@ -36,13 +48,17 @@ internal static class ContentDecoder
 
     /// <summary>
     /// Decodes <paramref name="body"/> from <paramref name="coding"/>, which must be supported. A deflate body is
-    /// read as zlib-wrapped when it starts with a zlib header, and as raw deflate otherwise.
+    /// read as zlib-wrapped when it starts with a zlib header, and as raw deflate otherwise. A gzip body may hold
+    /// several members, one after the other. An empty body decodes to nothing, and bytes after the end of the data
+    /// are ignored.
     /// </summary>
     /// <returns>
     /// The decoded bytes, or null when they would be more than <paramref name="maxDecodedLength"/>. Decoding stops
     /// at the limit.
     /// </returns>
-    /// <exception cref="InvalidDataException"><paramref name="body"/> is not valid data in the coding.</exception>
+    /// <exception cref="InvalidDataException">
+    /// <paramref name="body"/> is not valid data in the coding, or ends before the data does.
+    /// </exception>
     public static byte[]? Decode(
         byte[] body,
         string coding,
@@ -52,32 +68,11 @@ internal static class ContentDecoder
         ArgumentNullException.ThrowIfNull(body);
         ArgumentNullException.ThrowIfNull(coding);
 
-        using MemoryStream input = new(body, writable: false);
-        using Stream decoder = CreateDecoder(input, body, coding);
-        using MemoryStream output = new((int)Math.Min((long)body.Length * ExpectedExpansion, maxDecodedLength));
-        byte[] buffer = new byte[BufferSize];
-        int read;
-        while ((read = decoder.Read(buffer)) > 0)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (output.Length + read > maxDecodedLength)
-            {
-                return null;
-            }
-
-            output.Write(buffer, 0, read);
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        return output.ToArray();
-    }
-
-    private static Stream CreateDecoder(Stream input, byte[] body, string coding)
-    {
         if (IsGzip(coding))
         {
-            return new GZipStream(input, CompressionMode.Decompress);
+            using GZipDecoder gzipDecoder = new();
+
+            return Decode(body, gzipDecoder.Decompress, gzipDecoder.Reset, maxDecodedLength, cancellationToken);
         }
 
         if (!IsDeflate(coding))
@@ -85,9 +80,64 @@ internal static class ContentDecoder
             throw new ArgumentOutOfRangeException(nameof(coding), coding, null);
         }
 
-        return HasZlibHeader(body)
-            ? new ZLibStream(input, CompressionMode.Decompress)
-            : new DeflateStream(input, CompressionMode.Decompress);
+        if (HasZlibHeader(body))
+        {
+            using ZLibDecoder zlibDecoder = new();
+
+            return Decode(body, zlibDecoder.Decompress, startNextMember: null, maxDecodedLength, cancellationToken);
+        }
+
+        using DeflateDecoder deflateDecoder = new();
+
+        return Decode(body, deflateDecoder.Decompress, startNextMember: null, maxDecodedLength, cancellationToken);
+    }
+
+    // The decoders are used, and not the streams over them, because a stream ends a body that was cut short
+    // without a word, as if the part that arrived were the whole of it.
+    private static byte[]? Decode(
+        ReadOnlySpan<byte> source,
+        Decompress decompress,
+        Action? startNextMember,
+        int maxDecodedLength,
+        CancellationToken cancellationToken)
+    {
+        // A body inside another coding can decode to nothing, which the decoders would take as cut short.
+        if (source.IsEmpty)
+        {
+            return [];
+        }
+
+        using MemoryStream output = new((int)Math.Min((long)source.Length * ExpectedExpansion, maxDecodedLength));
+        byte[] buffer = new byte[BufferSize];
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            OperationStatus status = decompress(source, buffer, out int consumed, out int written);
+            source = source[consumed..];
+            if (output.Length + written > maxDecodedLength)
+            {
+                return null;
+            }
+
+            output.Write(buffer, 0, written);
+            switch (status)
+            {
+                case OperationStatus.DestinationTooSmall:
+                    break;
+
+                case OperationStatus.Done when startNextMember is not null && source.StartsWith(s_gzipMemberStart):
+                    startNextMember();
+                    break;
+
+                case OperationStatus.Done:
+                    return output.ToArray();
+
+                default:
+                    // The data is not valid, or the body ended before the data did.
+                    throw new InvalidDataException();
+            }
+        }
     }
 
     // RFC 1950: method 8 with a window of at most 32 KiB, and a header check that makes the first two bytes,
@@ -105,4 +155,13 @@ internal static class ContentDecoder
 
     private static bool IsDeflate(string coding) =>
         string.Equals(coding, DeflateCoding, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// One step of decoding, which the gzip, zlib and deflate decoders have in common.
+    /// </summary>
+    private delegate OperationStatus Decompress(
+        ReadOnlySpan<byte> source,
+        Span<byte> destination,
+        out int bytesConsumed,
+        out int bytesWritten);
 }

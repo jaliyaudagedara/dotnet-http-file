@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using DotNetHttpFile.Execution;
 using DotNetHttpFile.Tests.Support;
 
@@ -86,6 +87,92 @@ public sealed class ContentDecoderTests
     }
 
     [Fact]
+    public void Decode_TruncatedGzip_ThrowsInvalidDataException()
+    {
+        byte[] body = Compression.Gzip(s_content);
+
+        Assert.Throws<InvalidDataException>(() => Decode(body[..(body.Length / 2)], "gzip"));
+    }
+
+    [Fact]
+    public void Decode_GzipWithoutItsLastByte_ThrowsInvalidDataException()
+    {
+        byte[] body = Compression.Gzip(s_content);
+
+        Assert.Throws<InvalidDataException>(() => Decode(body[..^1], "gzip"));
+    }
+
+    [Fact]
+    public void Decode_TruncatedZlibWrappedDeflate_ThrowsInvalidDataException()
+    {
+        byte[] body = Compression.Zlib(s_content);
+
+        Assert.Throws<InvalidDataException>(() => Decode(body[..(body.Length / 2)], "deflate"));
+    }
+
+    [Fact]
+    public void Decode_TruncatedRawDeflate_ThrowsInvalidDataException()
+    {
+        byte[] body = Compression.RawDeflate(s_content);
+
+        Assert.Throws<InvalidDataException>(() => Decode(body[..(body.Length / 2)], "deflate"));
+    }
+
+    // A server that flushes what it wrote and never finishes the data leaves it without its last block.
+    [Fact]
+    public void Decode_DeflateWithoutAFinalBlock_ThrowsInvalidDataException()
+    {
+        using MemoryStream output = new();
+        using DeflateStream deflate = new(output, CompressionLevel.Optimal);
+        deflate.Write(s_content);
+        deflate.Flush();
+        byte[] body = output.ToArray();
+
+        Assert.Throws<InvalidDataException>(() => Decode(body, "deflate"));
+    }
+
+    [Fact]
+    public void Decode_GzipFollowedByPartOfAMember_ThrowsInvalidDataException()
+    {
+        byte[] member = Compression.Gzip(s_content);
+
+        Assert.Throws<InvalidDataException>(() => Decode([.. member, .. member[..(member.Length / 2)]], "gzip"));
+    }
+
+    [Theory]
+    [InlineData("gzip")]
+    [InlineData("deflate")]
+    public void Decode_EmptyBody_ReturnsEmpty(string coding)
+    {
+        byte[]? decoded = Decode([], coding);
+
+        Assert.Equal(Array.Empty<byte>(), decoded);
+    }
+
+    [Fact]
+    public void Decode_GzipWithTwoMembers_ReturnsTheContentOfBoth()
+    {
+        byte[] member = Compression.Gzip(s_content);
+        byte[] expected = [.. s_content, .. s_content];
+
+        byte[]? decoded = Decode([.. member, .. member], "gzip");
+
+        Assert.Equal(expected, decoded);
+    }
+
+    [Theory]
+    [InlineData("gzip")]
+    [InlineData("deflate")]
+    public void Decode_BytesAfterTheEndOfTheData_AreIgnored(string coding)
+    {
+        byte[] body = coding == "gzip" ? Compression.Gzip(s_content) : Compression.Zlib(s_content);
+
+        byte[]? decoded = Decode([.. body, 0x00, 0x01, 0x02], coding);
+
+        Assert.Equal(s_content, decoded);
+    }
+
+    [Fact]
     public void Decode_ContentLongerThanTheLimit_ReturnsNull()
     {
         byte[]? decoded = ContentDecoder.Decode(
@@ -122,4 +209,7 @@ public sealed class ContentDecoderTests
                 ContentDecoder.MaxDecodedLength,
                 cancellation.Token));
     }
+
+    private static byte[]? Decode(byte[] body, string coding) =>
+        ContentDecoder.Decode(body, coding, ContentDecoder.MaxDecodedLength, TestContext.Current.CancellationToken);
 }

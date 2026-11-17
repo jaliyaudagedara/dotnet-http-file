@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Text;
 using DotNetHttpFile.Environments;
 using DotNetHttpFile.Execution;
@@ -9,17 +8,18 @@ using DotNetHttpFile.Templates;
 
 namespace DotNetHttpFile.Resolution;
 
-/// <summary>Substitutes the variables and references of one run. Not thread-safe.</summary>
+/// <summary>
+/// Substitutes the variables and references of one run. Not thread-safe.
+/// </summary>
 internal sealed class VariableResolver(
     HttpFile file,
     EnvironmentSet environment,
     SecretProviderRegistry providers,
     DynamicVariables dynamicVariables,
     ExchangeStore exchanges,
-    SecretMask secretMask)
+    SecretMask secretMask,
+    IReadOnlyDictionary<string, string>? overrides = null)
 {
-    private const string NameSeparator = ", ";
-
     private static readonly CompositeFormat s_requestNotSentFormat =
         CompositeFormat.Parse(Resources.RequestNotSent);
 
@@ -33,11 +33,16 @@ internal sealed class VariableResolver(
         CompositeFormat.Parse(Resources.VariableNotDefinedNoEnvironment);
 
     // Keyed by definition, not by name: a name can be defined again further down the file.
-    private readonly Dictionary<FileVariable, string> _fileVariableValues = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<FileVariable, FileVariableValue> _fileVariableValues =
+        [with(ReferenceEqualityComparer.Instance)];
 
-    private readonly Dictionary<string, string> _providerValues = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _providerValues = [with(StringComparer.Ordinal)];
 
-    /// <summary>Resolves the URL, headers and body of <paramref name="request"/>.</summary>
+    private bool _usesEntraAccessToken;
+
+    /// <summary>
+    /// Resolves the URL, headers and body of <paramref name="request"/>.
+    /// </summary>
     /// <exception cref="HttpFileException">
     /// A variable is not defined, a value could not be read, or the URL is not an absolute http or https URL.
     /// </exception>
@@ -47,6 +52,7 @@ internal sealed class VariableResolver(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        _usesEntraAccessToken = false;
         string urlText = await ResolveAsync(request.Url, request.Line, cancellationToken).ConfigureAwait(false);
 
         // Masked from the resolved text, not from the Uri, whose escaping would hide a secret from the mask.
@@ -54,10 +60,10 @@ internal sealed class VariableResolver(
         if (!Uri.TryCreate(urlText, UriKind.Absolute, out Uri? url)
             || (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps))
         {
-            throw new HttpFileException(Format(s_urlNotAbsoluteFormat, displayUrl, request.Line));
+            throw new HttpFileException(Messages.Format(s_urlNotAbsoluteFormat, displayUrl, request.Line));
         }
 
-        List<KeyValuePair<string, string>> headers = new(request.Headers.Count);
+        List<KeyValuePair<string, string>> headers = [with(capacity: request.Headers.Count)];
         foreach (HeaderDefinition header in request.Headers)
         {
             string value = await ResolveAsync(header.Value, header.Line, cancellationToken).ConfigureAwait(false);
@@ -69,18 +75,22 @@ internal sealed class VariableResolver(
             : await ResolveAsync(request.Body, request.BodyLine ?? request.Line, cancellationToken)
                 .ConfigureAwait(false);
 
-        return new ResolvedRequest(request.Method, url, request.HttpVersion, headers, body)
+        return new ResolvedRequest(request.Method, url, headers, displayUrl)
         {
-            DisplayUrl = displayUrl,
+            HttpVersion = request.HttpVersion,
+            Body = body,
             HeaderLines = [.. request.Headers.Select(header => header.Line)],
+            UsesEntraAccessToken = _usesEntraAccessToken,
         };
     }
 
-    /// <summary>Resolves <paramref name="template"/>, whose text starts on <paramref name="line"/>.</summary>
+    /// <summary>
+    /// Resolves <paramref name="template"/>, whose text starts on <paramref name="line"/>.
+    /// </summary>
     /// <remarks>
-    /// A name is the file variable defined above <paramref name="line"/>, else the environment value. A file
-    /// variable and a provider value are resolved once per run; a dynamic variable written in the template
-    /// itself is evaluated at each use.
+    /// A name is the <c>--var</c> override, else the file variable defined above <paramref name="line"/>, else
+    /// the environment value. A file variable and a provider value are resolved once per run; a dynamic variable
+    /// written in the template itself is evaluated at each use.
     /// </remarks>
     /// <exception cref="HttpFileException">A variable is not defined or a value could not be read.</exception>
     public async Task<string> ResolveAsync(Template template, int line, CancellationToken cancellationToken = default)
@@ -110,24 +120,34 @@ internal sealed class VariableResolver(
         return builder.ToString();
     }
 
-    private static string Format(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
-        string.Format(CultureInfo.CurrentCulture, format, arguments);
-
     private async Task<string?> ResolveVariableAsync(
         string name,
         IReadOnlyDictionary<string, FileVariable> visibleVariables,
         CancellationToken cancellationToken)
     {
+        if (overrides is not null && overrides.TryGetValue(name, out string? overrideValue))
+        {
+            return overrideValue;
+        }
+
         if (visibleVariables.TryGetValue(name, out FileVariable? variable))
         {
-            if (!_fileVariableValues.TryGetValue(variable, out string? value))
+            if (!_fileVariableValues.TryGetValue(variable, out FileVariableValue? value))
             {
                 // A file variable sees only the definitions above it, so this recursion cannot loop.
-                value = await ResolveAsync(variable.Value, variable.Line, cancellationToken).ConfigureAwait(false);
+                bool usedBefore = _usesEntraAccessToken;
+                _usesEntraAccessToken = false;
+                value = new FileVariableValue(
+                    await ResolveAsync(variable.Value, variable.Line, cancellationToken).ConfigureAwait(false),
+                    _usesEntraAccessToken);
                 _fileVariableValues.Add(variable, value);
+                _usesEntraAccessToken = usedBefore;
             }
 
-            return value;
+            // The value is cached, so what it was made from has to be remembered with it.
+            _usesEntraAccessToken |= value.UsesEntraAccessToken;
+
+            return value.Text;
         }
 
         if (!environment.TryGetValue(name, out EnvironmentValue? environmentValue))
@@ -149,6 +169,11 @@ internal sealed class VariableResolver(
         ProviderEnvironmentValue value,
         CancellationToken cancellationToken)
     {
+        _usesEntraAccessToken |= string.Equals(
+            value.Provider,
+            EntraAccessTokenProvider.ProviderName,
+            StringComparison.Ordinal);
+
         if (_providerValues.TryGetValue(name, out string? secret))
         {
             return secret;
@@ -174,23 +199,25 @@ internal sealed class VariableResolver(
     {
         if (!exchanges.TryGet(reference.RequestName, out HttpExchange? exchange))
         {
-            throw new HttpFileException(Format(s_requestNotSentFormat, reference.RequestName));
+            throw new HttpFileException(Messages.Format(s_requestNotSentFormat, reference.RequestName));
         }
 
         return ReferenceEvaluator.Evaluate(reference, exchange);
     }
 
+    private sealed record FileVariableValue(string Text, bool UsesEntraAccessToken);
+
     private HttpFileException NotDefined(string name, int line)
     {
         if (environment.SelectedName is null && environment.AvailableNames.Count > 0)
         {
-            return new HttpFileException(Format(
+            return new HttpFileException(Messages.Format(
                 s_variableNotDefinedNoEnvironmentFormat,
                 name,
                 line,
-                string.Join(NameSeparator, environment.AvailableNames)));
+                string.Join(Messages.ListSeparator, environment.AvailableNames)));
         }
 
-        return new HttpFileException(Format(s_variableNotDefinedFormat, name, line));
+        return new HttpFileException(Messages.Format(s_variableNotDefinedFormat, name, line));
     }
 }

@@ -1,7 +1,10 @@
 name: CI
 
-# Manual only for now. Restore push and pull_request to run it automatically.
 on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

@@ -1,11 +1,11 @@
+# Each request has a title on its ### line, which --name selects (case doesn't matter).
+
 @BaseUrl=https://jsonplaceholder.typicode.com
 
-# @name getToDos
+### List todos
 GET {{BaseUrl}}/todos?_limit=3
 
-###
-
-# @name createToDo
+### Create a todo
 POST {{BaseUrl}}/todos
 Content-Type: application/json
 
@@ -14,7 +14,5 @@ Content-Type: application/json
     "completed": false
 }
 
-###
-
-# @name getToDo
-GET {{BaseUrl}}/todos/{{getToDos.response.body.$[1].id}}
+### Get the first todo
+GET {{BaseUrl}}/todos/1
