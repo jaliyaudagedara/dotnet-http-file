@@ -56,6 +56,9 @@ internal sealed class HttpFileRunner(
     private static readonly CompositeFormat s_unexpectedErrorFormat =
         CompositeFormat.Parse(Resources.UnexpectedError);
 
+    private static readonly CompositeFormat s_varOptionNotUsedFormat =
+        CompositeFormat.Parse(Resources.VarOptionNotUsed);
+
     private static readonly CompositeFormat s_verboseDecodedFormat = CompositeFormat.Parse(Resources.VerboseDecoded);
 
     private static readonly CompositeFormat s_verboseDotEnvFileFormat =
@@ -200,6 +203,7 @@ internal sealed class HttpFileRunner(
 
         RequestDefinition target = await SelectRequestAsync(file, options.RequestName, cancellationToken)
             .ConfigureAwait(false);
+        WarnOfUnusedVariables(file, options.Variables, renderer);
         IReadOnlyList<RequestDefinition> plan = DependencyPlanner.Plan(file, target, options.Variables);
         log.Write(Messages.Format(
             s_verbosePlanFormat,
@@ -279,6 +283,23 @@ internal sealed class HttpFileRunner(
             }
 
             return exchange;
+        }
+    }
+
+    private static void WarnOfUnusedVariables(
+        HttpFile file,
+        IReadOnlyDictionary<string, string>? overrides,
+        ResponseRenderer renderer)
+    {
+        if (overrides is null)
+        {
+            return;
+        }
+
+        HashSet<string> referenced = file.ReferencedVariableNames();
+        foreach (string name in overrides.Keys.Where(name => !referenced.Contains(name)))
+        {
+            renderer.RenderWarning(Messages.Format(s_varOptionNotUsedFormat, name, file.Path));
         }
     }
 

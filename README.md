@@ -37,7 +37,7 @@ Try `samples/Basics/Named.http` and `samples/Basics/Titled.http` (no setup), or 
 | `-v`, `--verbose` | Log what the tool does (files read, requests, tokens acquired) to stderr, never a token or secret-provider value. Changed in 0.2: it no longer means `--show full`. |
 | `--show <full\|body\|headers\|status>` | What to print. |
 | `-k`, `--insecure` | Skip server certificate validation. |
-| `--var <name=value>` | Set a variable for this run, over the file and the environment. Can be repeated; the last one wins. |
+| `--var <name=value>` | Set a variable for this run, over the file and the environment. Can be repeated; the last one wins. Names are case-sensitive, and a name no `{{name}}` in the file uses gets a warning. |
 
 ## Exit codes
 

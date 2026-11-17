@@ -1183,6 +1183,103 @@ public sealed class HttpFileRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_VarNameDifferingInCase_WarnsAndStillSendsTheRequest()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            $$$"""
+            @Limit = 3
+
+            GET {{{server.BaseUri}}}todos?limit={{Limit}}
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path)
+        {
+            Variables = new Dictionary<string, string>
+            {
+                ["limit"] = "1",
+            },
+        });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(["GET /todos?limit=3 HTTP/1.1"], server.Requests.Select(request => request.RequestLine));
+        Assert.Equal(
+            [$"warning: --var 'limit' is not used in {path}; variable names are case-sensitive."],
+            harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_VarNamesUnused_WarnsOncePerNameInOrderWithoutTheValues()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync($"GET {server.BaseUri}x");
+
+        await harness.RunAsync(new RunOptions(path)
+        {
+            Variables = new Dictionary<string, string>
+            {
+                ["second"] = "s3cret-one",
+                ["first"] = "s3cret-two",
+            },
+        });
+
+        Assert.Equal(
+            [
+                $"warning: --var 'second' is not used in {path}; variable names are case-sensitive.",
+                $"warning: --var 'first' is not used in {path}; variable names are case-sensitive.",
+            ],
+            harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_VarNameUsedByTheRequest_DoesNotWarn()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync($$$"""GET {{{server.BaseUri}}}x/{{id}}""");
+
+        await harness.RunAsync(new RunOptions(path)
+        {
+            Variables = new Dictionary<string, string>
+            {
+                ["id"] = "7",
+            },
+        });
+
+        Assert.Empty(harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_VarNameUsedOnlyByAnotherRequest_DoesNotWarn()
+    {
+        await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            $$$"""
+            # @name one
+            GET {{{server.BaseUri}}}one
+
+            ###
+
+            # @name two
+            GET {{{server.BaseUri}}}two/{{id}}
+            """);
+
+        await harness.RunAsync(new RunOptions(path)
+        {
+            RequestName = "one",
+            Variables = new Dictionary<string, string>
+            {
+                ["id"] = "7",
+            },
+        });
+
+        Assert.Empty(harness.ErrorLines);
+    }
+
+    [Fact]
     public async Task RunAsync_ProcessEnvVariable_UsesTheGivenEnvironment()
     {
         await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);

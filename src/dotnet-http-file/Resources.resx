@@ -448,6 +448,10 @@
     <value>--var needs name=value.</value>
     <comment>--var is a literal option name and is not translated. Shown when a --var has no argument, or its argument has no '=' or nothing before it. The argument is not shown because it can be a secret.</comment>
   </data>
+  <data name="VarOptionNotUsed" xml:space="preserve">
+    <value>--var '{0}' is not used in {1}; variable names are case-sensitive.</value>
+    <comment>--var is a literal option name and is not translated. {0} is the variable name given to --var, which no {{name}} in the file refers to. {1} is the path of the .http file. The value is never shown because it can be a secret.</comment>
+  </data>
   <data name="FileNotFound" xml:space="preserve">
     <value>File '{0}' was not found.</value>
     <comment>{0} is the path given on the command line, which does not exist or is a folder.</comment>

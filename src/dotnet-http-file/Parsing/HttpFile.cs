@@ -34,4 +34,21 @@ internal sealed record HttpFile(
 
         return visible;
     }
+
+    /// <summary>
+    /// Returns the names of the plain variables, as <c>{{name}}</c>, that the file value of a variable or any
+    /// request refers to. Request references and dynamic variables name no variable.
+    /// </summary>
+    public HashSet<string> ReferencedVariableNames()
+    {
+        HashSet<string> names = [with(StringComparer.Ordinal)];
+        IEnumerable<Template> templates = Variables.Select(variable => variable.Value)
+            .Concat(Requests.SelectMany(request => request.Templates));
+        foreach (Template template in templates)
+        {
+            names.UnionWith(template.Segments.OfType<VariableSegment>().Select(segment => segment.Name));
+        }
+
+        return names;
+    }
 }

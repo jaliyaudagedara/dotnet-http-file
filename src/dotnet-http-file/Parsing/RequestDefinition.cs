@@ -47,4 +47,25 @@ internal sealed record RequestDefinition(
     /// The request line is the text of the file, so a variable in the URL is not expanded and no value can show.
     /// </remarks>
     public string DisplayName => NameOrTitle ?? $"{Method} {Url.Raw}";
+
+    /// <summary>
+    /// The templates of the request: the URL, the header values and the body when there is one.
+    /// </summary>
+    public IEnumerable<Template> Templates
+    {
+        get
+        {
+            yield return Url;
+
+            foreach (HeaderDefinition header in Headers)
+            {
+                yield return header.Value;
+            }
+
+            if (Body is not null)
+            {
+                yield return Body;
+            }
+        }
+    }
 }
