@@ -28,7 +28,7 @@ combines with `--show`.
   `Authorization` as `Bearer ***`.
 - The response is shown as the server sent it: status line, headers and body. Keep output out of CI logs if
   the server may echo a token. In a terminal, control characters and bidirectional overrides show as their
-  codes (`\x1B`, `‮`); `body` mode writes the bytes as received.
+  codes (`\x1B`, `\u202E`); `body` mode writes the bytes as received.
 - A redirect location is shown as the server sent it, unless it takes parts of the request URL (a relative
   location, or one that takes the request's `#fragment`). Then it is masked.
 - Values from `.user` files, `$dotenv`, `$processEnv` and `--var` are not masked.
