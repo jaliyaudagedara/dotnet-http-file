@@ -44,12 +44,12 @@ internal static partial class GraphQLRequest
     /// The variables are the text after a blank line of the body that is a JSON object, trying the last blank
     /// line first and then each one before it, so that variables may hold blank lines too. The query is the
     /// text before that blank line. When no such text is a JSON object the whole body is the query, so a query
-    /// may hold blank lines of its own. Then a last block that starts as a JSON object does (a brace, then a
-    /// quote or the closing brace) is taken as variables with a mistake in them, and is an error.
+    /// may hold blank lines of its own. Then a block after a blank line that starts as a JSON object does (a
+    /// brace, then a quote or the closing brace) is taken as variables with a mistake in them, and is an error.
     /// </remarks>
     /// <exception cref="HttpFileException">
-    /// The query is empty, or the last block starts as a JSON object does and is not one. The message never holds
-    /// the body.
+    /// The query is empty, or no block after a blank line is a JSON object and one of them starts as a JSON object
+    /// does. The message never holds the body.
     /// </exception>
     public static ResolvedRequest Apply(ResolvedRequest request, int line)
     {
@@ -117,10 +117,10 @@ internal static partial class GraphQLRequest
             }
         }
 
-        // A fragment, a second operation or an anonymous query after a blank line is part of the query. A last
-        // block that starts as a JSON object does is variables with a mistake in them, which sending it as
-        // GraphQL would hide.
-        if (blankLines.Count > 0 && StartsLikeJsonObject(TextAfter(body, blankLines[^1])))
+        // A fragment, a second operation or an anonymous query after a blank line is part of the query. A block
+        // that starts as a JSON object does is variables with a mistake in them, which sending it as GraphQL would
+        // hide. Not only the last block: the variables may hold a blank line of their own.
+        if (blankLines.Any(blankLine => StartsLikeJsonObject(TextAfter(body, blankLine))))
         {
             throw new HttpFileException(Messages.Format(s_variablesNotObjectFormat, line));
         }

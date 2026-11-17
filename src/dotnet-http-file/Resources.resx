@@ -302,7 +302,7 @@
   </data>
   <data name="GraphQLVariablesNotObject" xml:space="preserve">
     <value>The GraphQL variables of the request on line {0} are not a JSON object; the request cannot be sent.</value>
-    <comment>{0} is the line number of the request line. Used when no text after a blank line of the body is a JSON object and the text after the last blank line starts as one does: a brace, then a quote or the closing brace. GraphQL and JSON are not translated. The variables are left out because they can hold a secret.</comment>
+    <comment>{0} is the line number of the request line. Used when no text after a blank line of the body is a JSON object and the text after a blank line starts as one does: a brace, then a quote or the closing brace. GraphQL and JSON are not translated. The variables are left out because they can hold a secret.</comment>
   </data>
   <data name="UnsupportedHttpVersion" xml:space="preserve">
     <value>'{0}' is not a supported HTTP version. Use HTTP/1.0, HTTP/1.1, HTTP/2 or HTTP/3.</value>

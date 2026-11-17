@@ -144,6 +144,16 @@ public sealed class GraphQLRequestTests
         Assert.Equal("""{"query":"{ a }\n\n{\"id\": 1}","variables":{"id":2}}""", applied.Body);
     }
 
+    [Fact]
+    public void Apply_BrokenObjectBeforeVariables_SendsItInTheQuery()
+    {
+        ResolvedRequest request = Marked("{ a }\n\n{\"x\": oops}\n\n{\"id\": 1}");
+
+        ResolvedRequest applied = GraphQLRequest.Apply(request, RequestLine);
+
+        Assert.Equal("""{"query":"{ a }\n\n{\"x\": oops}","variables":{"id":1}}""", applied.Body);
+    }
+
     [Theory]
     [InlineData("{ a }\n\n\n{}")]
     [InlineData("{ a }\n \n\t\n{}")]
@@ -296,7 +306,10 @@ public sealed class GraphQLRequestTests
     [InlineData("{ a }\n\n{\"id\": 1} {\"token\": \"s3cret\"}")]
     [InlineData("{ a }\r\n\r\n  {\r\n  \"token\": s3cret\r\n}")]
     [InlineData("{ a }\n\n{ } s3cret")]
-    public void Apply_LastBlockStartsLikeAJsonObjectButIsNotOne_ThrowsWithoutQuotingIt(string body)
+    [InlineData("{ a }\n\n{ \"id\": 1,\n\n  \"token\": s3cret }")]
+    [InlineData("{ a }\r\n\r\n{\r\n  \"token\": s3cret,\r\n\r\n  \"id\": 1\r\n}")]
+    [InlineData("{ a }\n\n{\"token\": s3cret\n\n}\n\n{ b }")]
+    public void Apply_BlockStartsLikeAJsonObjectButIsNotOne_ThrowsWithoutQuotingIt(string body)
     {
         ResolvedRequest request = Marked(body);
 
@@ -319,7 +332,7 @@ public sealed class GraphQLRequestTests
     [InlineData("{ a }\n\n{")]
     [InlineData("{ a }\n\n[\"id\"]")]
     [InlineData("{ a }\n\n\"id\"")]
-    public void Apply_LastBlockDoesNotStartLikeAJsonObject_SendsTheWholeBodyAsTheQuery(string body)
+    public void Apply_NoBlockStartsLikeAJsonObject_SendsTheWholeBodyAsTheQuery(string body)
     {
         ResolvedRequest request = Marked(body);
 
