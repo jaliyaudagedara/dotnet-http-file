@@ -2,7 +2,6 @@ using System.Buffers;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.CommandLine.Parsing;
-using System.Text;
 using DotNetHttpFile.Output;
 using DotNetHttpFile.Parsing;
 using DotNetHttpFile.Resolution;
@@ -39,17 +38,6 @@ internal static class CommandLine
 
     // The parser accepts --option=value and --option:value, and the value may be a secret.
     private static readonly SearchValues<char> s_optionValueSeparators = SearchValues.Create("=:");
-
-    private static readonly CompositeFormat s_fileExtensionNotSupportedFormat =
-        CompositeFormat.Parse(Resources.FileExtensionNotSupported);
-
-    private static readonly CompositeFormat s_fileNotFoundFormat = CompositeFormat.Parse(Resources.FileNotFound);
-
-    private static readonly CompositeFormat s_unrecognizedOptionFormat =
-        CompositeFormat.Parse(Resources.UnrecognizedOption);
-
-    private static readonly CompositeFormat s_varOptionInvalidFormat =
-        CompositeFormat.Parse(Resources.VarOptionInvalid);
 
     /// <summary>
     /// Parses <paramref name="args"/> and calls <paramref name="run"/> with what they ask for.
@@ -151,7 +139,7 @@ internal static class CommandLine
             string? unknownOption = FindUnknownOption(parseResult.GetResult(fileArgument));
             if (unknownOption is not null)
             {
-                renderer.RenderError(Messages.Format(s_unrecognizedOptionFormat, unknownOption));
+                renderer.RenderError(Messages.Format(Resources.UnrecognizedOption, unknownOption));
 
                 return Task.FromResult(ExitCodes.NotSent);
             }
@@ -209,7 +197,7 @@ internal static class CommandLine
                     && OptionName(token).Length < token.Length
                     && error.Message.Contains($"'{token}'", StringComparison.Ordinal))
                 {
-                    return Messages.Format(s_unrecognizedOptionFormat, OptionName(token));
+                    return Messages.Format(Resources.UnrecognizedOption, OptionName(token));
                 }
             }
         }
@@ -257,7 +245,7 @@ internal static class CommandLine
             }
             else if (!FileVariable.IsValidName(token.Value[..assignment]))
             {
-                result.AddError(Messages.Format(s_varOptionInvalidFormat, token.Value[..assignment]));
+                result.AddError(Messages.Format(Resources.VarOptionInvalid, token.Value[..assignment]));
             }
         }
     }
@@ -290,11 +278,11 @@ internal static class CommandLine
         string path = result.Tokens[0].Value;
         if (!File.Exists(path))
         {
-            result.AddError(Messages.Format(s_fileNotFoundFormat, path));
+            result.AddError(Messages.Format(Resources.FileNotFound, path));
         }
         else if (!s_fileExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
         {
-            result.AddError(Messages.Format(s_fileExtensionNotSupportedFormat, path));
+            result.AddError(Messages.Format(Resources.FileExtensionNotSupported, path));
         }
     }
 

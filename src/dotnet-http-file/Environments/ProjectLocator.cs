@@ -1,13 +1,8 @@
-using System.Text;
-
 namespace DotNetHttpFile.Environments;
 
 internal static class ProjectLocator
 {
     private const string ProjectFilePattern = "*.csproj";
-
-    private static readonly CompositeFormat s_multipleProjectFilesFormat =
-        CompositeFormat.Parse(Resources.MultipleProjectFiles);
 
     /// <summary>
     /// Finds the nearest folder that holds a project file, starting with <paramref name="startDirectory"/>
@@ -53,7 +48,7 @@ internal static class ProjectLocator
         {
             0 => null,
             1 => projectFiles[0],
-            _ => throw new HttpFileException(Messages.Format(s_multipleProjectFilesFormat, directory)),
+            _ => throw new HttpFileException(Messages.Format(Resources.MultipleProjectFiles, directory)),
         };
     }
 

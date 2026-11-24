@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Security.Authentication;
-using System.Text;
 using DotNetHttpFile.Resolution;
 
 namespace DotNetHttpFile.Execution;
@@ -14,27 +13,6 @@ namespace DotNetHttpFile.Execution;
 /// <param name="reportRedirect">Receives a message for each redirect that is followed.</param>
 internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask, Action<string> reportRedirect)
 {
-    private static readonly CompositeFormat s_redirectedFormat =
-        CompositeFormat.Parse(Resources.Redirected);
-
-    private static readonly CompositeFormat s_sendFailedFormat =
-        CompositeFormat.Parse(Resources.SendFailed);
-
-    private static readonly CompositeFormat s_sendFailedCertificateNotTrustedFormat =
-        CompositeFormat.Parse(Resources.SendFailedCertificateNotTrusted);
-
-    private static readonly CompositeFormat s_sendTimedOutFormat =
-        CompositeFormat.Parse(Resources.SendTimedOut);
-
-    private static readonly CompositeFormat s_responseNotDecodedFormat =
-        CompositeFormat.Parse(Resources.ResponseNotDecoded);
-
-    private static readonly CompositeFormat s_responseNotValidCodingFormat =
-        CompositeFormat.Parse(Resources.ResponseNotValidCoding);
-
-    private static readonly CompositeFormat s_responseDecodedTooLargeFormat =
-        CompositeFormat.Parse(Resources.ResponseDecodedTooLarge);
-
     /// <summary>
     /// Sends <paramref name="request"/>, follows redirects as <see cref="RedirectPolicy"/> says, and reads the
     /// whole final response into memory, decoding a gzip or deflate body.
@@ -95,7 +73,7 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
                     : null;
                 if (next is not null)
                 {
-                    reportRedirect(Messages.Format(s_redirectedFormat, next.DisplayUrl, (int)response.StatusCode));
+                    reportRedirect(Messages.Format(Resources.Redirected, next.DisplayUrl, (int)response.StatusCode));
                     current = next;
                     continue;
                 }
@@ -118,7 +96,7 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
         {
             // Only the caller and the timeout can cancel a send, and the caller did not.
             string text = Messages.Format(
-                s_sendTimedOutFormat,
+                Resources.SendTimedOut,
                 current.Method,
                 current.DisplayUrl,
                 httpClient.Timeout.TotalSeconds);
@@ -135,11 +113,11 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
             // For a TLS failure the outer message only says to look at the inner one.
             string text = exception.InnerException is AuthenticationException authenticationException
                 ? Messages.Format(
-                    s_sendFailedCertificateNotTrustedFormat,
+                    Resources.SendFailedCertificateNotTrusted,
                     current.Method,
                     current.DisplayUrl,
                     authenticationException.Message)
-                : Messages.Format(s_sendFailedFormat, current.Method, current.DisplayUrl, exception.Message);
+                : Messages.Format(Resources.SendFailed, current.Method, current.DisplayUrl, exception.Message);
 
             throw new HttpFileException(text, exception);
         }
@@ -161,7 +139,7 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
         if (unsupportedCodings.Count > 0)
         {
             warnings.Add(Messages.Format(
-                s_responseNotDecodedFormat,
+                Resources.ResponseNotDecoded,
                 request.Method,
                 request.DisplayUrl,
                 string.Join(Messages.ListSeparator, unsupportedCodings)));
@@ -187,17 +165,17 @@ internal sealed class RequestSender(HttpClient httpClient, SecretMask secretMask
             }
             catch (InvalidDataException exception)
             {
-                throw DecodeFailure(s_responseNotValidCodingFormat, request, response, coding, exception);
+                throw DecodeFailure(Resources.ResponseNotValidCoding, request, response, coding, exception);
             }
 
-            decoded = next ?? throw DecodeFailure(s_responseDecodedTooLargeFormat, request, response, coding);
+            decoded = next ?? throw DecodeFailure(Resources.ResponseDecodedTooLarge, request, response, coding);
         }
 
         return response with { Body = decoded };
     }
 
     private static HttpFileException DecodeFailure(
-        CompositeFormat format,
+        string format,
         ResolvedRequest request,
         ReceivedResponse response,
         string coding,

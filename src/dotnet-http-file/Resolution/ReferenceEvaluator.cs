@@ -31,42 +31,6 @@ internal static class ReferenceEvaluator
         Encoder = BodyText.IndentedJsonOptions.Encoder,
     };
 
-    private static readonly CompositeFormat s_referenceAllHeadersUnsupportedFormat =
-        CompositeFormat.Parse(Resources.ReferenceAllHeadersUnsupported);
-
-    private static readonly CompositeFormat s_referenceBodyDuplicatePropertiesFormat =
-        CompositeFormat.Parse(Resources.ReferenceBodyDuplicateProperties);
-
-    private static readonly CompositeFormat s_referenceBodyInvalidUnicodeFormat =
-        CompositeFormat.Parse(Resources.ReferenceBodyInvalidUnicode);
-
-    private static readonly CompositeFormat s_referenceBodyNotJsonFormat =
-        CompositeFormat.Parse(Resources.ReferenceBodyNotJson);
-
-    private static readonly CompositeFormat s_referenceBodyNotDecodedFormat =
-        CompositeFormat.Parse(Resources.ReferenceBodyNotDecoded);
-
-    private static readonly CompositeFormat s_referenceBodyNotXmlFormat =
-        CompositeFormat.Parse(Resources.ReferenceBodyNotXml);
-
-    private static readonly CompositeFormat s_referenceHeaderNotFoundFormat =
-        CompositeFormat.Parse(Resources.ReferenceHeaderNotFound);
-
-    private static readonly CompositeFormat s_referenceInvalidJsonPathFormat =
-        CompositeFormat.Parse(Resources.ReferenceInvalidJsonPath);
-
-    private static readonly CompositeFormat s_referenceInvalidXPathFormat =
-        CompositeFormat.Parse(Resources.ReferenceInvalidXPath);
-
-    private static readonly CompositeFormat s_referenceNoContentAtPathFormat =
-        CompositeFormat.Parse(Resources.ReferenceNoContentAtPath);
-
-    private static readonly CompositeFormat s_referenceUnsupportedBodySelectorFormat =
-        CompositeFormat.Parse(Resources.ReferenceUnsupportedBodySelector);
-
-    private static readonly CompositeFormat s_referenceXPathMultipleNodesFormat =
-        CompositeFormat.Parse(Resources.ReferenceXPathMultipleNodes);
-
     /// <summary>
     /// Reads the value <paramref name="reference"/> selects from the request or response of
     /// <paramref name="exchange"/>, the exchange of the request the reference names.
@@ -93,7 +57,7 @@ internal static class ReferenceEvaluator
         if (reference.Source == ReferenceSource.Response && exchange.Response.IsContentEncoded)
         {
             throw new HttpFileException(Messages.Format(
-                s_referenceBodyNotDecodedFormat,
+                Resources.ReferenceBodyNotDecoded,
                 reference.RequestName,
                 string.Join(Messages.ListSeparator, exchange.Response.UnsupportedCodings)));
         }
@@ -117,14 +81,16 @@ internal static class ReferenceEvaluator
             return EvaluateXPath(reference, body);
         }
 
-        throw new HttpFileException(Messages.Format(s_referenceUnsupportedBodySelectorFormat, reference.Expression));
+        throw new HttpFileException(Messages.Format(Resources.ReferenceUnsupportedBodySelector, reference.Expression));
     }
 
     private static string EvaluateHeader(RequestReferenceSegment reference, HttpExchange exchange)
     {
         if (reference.Selector == WholeSelector)
         {
-            throw new HttpFileException(Messages.Format(s_referenceAllHeadersUnsupportedFormat, reference.Expression));
+            throw new HttpFileException(Messages.Format(
+                Resources.ReferenceAllHeadersUnsupported,
+                reference.Expression));
         }
 
         IReadOnlyList<KeyValuePair<string, string>> headers = reference.Source == ReferenceSource.Request
@@ -143,7 +109,7 @@ internal static class ReferenceEvaluator
         if (values.Count == 0)
         {
             throw new HttpFileException(Messages.Format(
-                s_referenceHeaderNotFoundFormat,
+                Resources.ReferenceHeaderNotFound,
                 reference.RequestName,
                 SourceKeyword(reference),
                 reference.Selector));
@@ -157,7 +123,7 @@ internal static class ReferenceEvaluator
         if (!JsonPath.TryParse(reference.Selector, out JsonPath? path))
         {
             throw new HttpFileException(
-                Messages.Format(s_referenceInvalidJsonPathFormat, reference.Selector, reference.Expression));
+                Messages.Format(Resources.ReferenceInvalidJsonPath, reference.Selector, reference.Expression));
         }
 
         // System.Text.Json reports an escaped surrogate without its pair with InvalidOperationException, and
@@ -176,7 +142,7 @@ internal static class ReferenceEvaluator
             catch (Exception exception) when (IsFilterFunctionFailure(exception))
             {
                 throw new HttpFileException(
-                    Messages.Format(s_referenceInvalidJsonPathFormat, reference.Selector, reference.Expression),
+                    Messages.Format(Resources.ReferenceInvalidJsonPath, reference.Selector, reference.Expression),
                     exception);
             }
 
@@ -188,7 +154,7 @@ internal static class ReferenceEvaluator
             return matches.Length switch
             {
                 0 => throw new HttpFileException(
-                    Messages.Format(s_referenceNoContentAtPathFormat, reference.Expression)),
+                    Messages.Format(Resources.ReferenceNoContentAtPath, reference.Expression)),
                 1 => FormatSingleMatch(matches[0]),
                 _ => FormatMatchesAsArray(matches),
             };
@@ -196,7 +162,7 @@ internal static class ReferenceEvaluator
         catch (InvalidOperationException exception)
         {
             throw new HttpFileException(
-                Messages.Format(s_referenceBodyInvalidUnicodeFormat, reference.RequestName, SourceKeyword(reference)),
+                Messages.Format(Resources.ReferenceBodyInvalidUnicode, reference.RequestName, SourceKeyword(reference)),
                 exception);
         }
     }
@@ -219,9 +185,9 @@ internal static class ReferenceEvaluator
         }
         catch (JsonException exception)
         {
-            CompositeFormat format = IsJson(body)
-                ? s_referenceBodyDuplicatePropertiesFormat
-                : s_referenceBodyNotJsonFormat;
+            string format = IsJson(body)
+                ? Resources.ReferenceBodyDuplicateProperties
+                : Resources.ReferenceBodyNotJson;
 
             throw new HttpFileException(
                 Messages.Format(format, reference.RequestName, SourceKeyword(reference)),
@@ -288,7 +254,7 @@ internal static class ReferenceEvaluator
         catch (XmlException exception)
         {
             throw new HttpFileException(
-                Messages.Format(s_referenceBodyNotXmlFormat, reference.RequestName, SourceKeyword(reference)),
+                Messages.Format(Resources.ReferenceBodyNotXml, reference.RequestName, SourceKeyword(reference)),
                 exception);
         }
 
@@ -305,7 +271,7 @@ internal static class ReferenceEvaluator
         catch (XPathException exception)
         {
             throw new HttpFileException(
-                Messages.Format(s_referenceInvalidXPathFormat, reference.Selector, reference.Expression),
+                Messages.Format(Resources.ReferenceInvalidXPath, reference.Selector, reference.Expression),
                 exception);
         }
     }
@@ -315,13 +281,13 @@ internal static class ReferenceEvaluator
         int count = nodes.Count;
         if (count == 0)
         {
-            throw new HttpFileException(Messages.Format(s_referenceNoContentAtPathFormat, reference.Expression));
+            throw new HttpFileException(Messages.Format(Resources.ReferenceNoContentAtPath, reference.Expression));
         }
 
         if (count > 1)
         {
             throw new HttpFileException(
-                Messages.Format(s_referenceXPathMultipleNodesFormat, reference.Selector, count));
+                Messages.Format(Resources.ReferenceXPathMultipleNodes, reference.Selector, count));
         }
 
         nodes.MoveNext();

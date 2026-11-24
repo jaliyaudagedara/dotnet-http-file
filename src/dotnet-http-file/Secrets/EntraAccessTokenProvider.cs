@@ -1,6 +1,5 @@
 using System.Buffers.Text;
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -32,17 +31,6 @@ internal sealed partial class EntraAccessTokenProvider(Lazy<TokenCredential> cre
     private const int JwtPartCount = 3;
     private const string ExpiryFormat = "u";
 
-    private static readonly CompositeFormat s_entraAccessTokenFailedFormat =
-        CompositeFormat.Parse(Resources.EntraAccessTokenFailed);
-
-    private static readonly CompositeFormat s_entraAccessTokenInvalidScopeFormat =
-        CompositeFormat.Parse(Resources.EntraAccessTokenInvalidScope);
-
-    private static readonly CompositeFormat s_entraAccessTokenInvalidTenantIdFormat =
-        CompositeFormat.Parse(Resources.EntraAccessTokenInvalidTenantId);
-
-    private static readonly CompositeFormat s_verboseTokenFormat = CompositeFormat.Parse(Resources.VerboseToken);
-
     public string Name => ProviderName;
 
     public async Task<string> ResolveAsync(SecretRequest request, CancellationToken cancellationToken = default)
@@ -52,13 +40,15 @@ internal sealed partial class EntraAccessTokenProvider(Lazy<TokenCredential> cre
         string scope = request.GetRequiredString(ProviderName, ScopeField);
         if (!ScopePattern.IsMatch(scope))
         {
-            throw new HttpFileException(Messages.Format(s_entraAccessTokenInvalidScopeFormat, request.VariableName));
+            throw new HttpFileException(Messages.Format(Resources.EntraAccessTokenInvalidScope, request.VariableName));
         }
 
         string? tenantId = request.GetOptionalString(ProviderName, TenantIdField);
         if (tenantId is not null && !TenantIdPattern.IsMatch(tenantId))
         {
-            throw new HttpFileException(Messages.Format(s_entraAccessTokenInvalidTenantIdFormat, request.VariableName));
+            throw new HttpFileException(Messages.Format(
+                Resources.EntraAccessTokenInvalidTenantId,
+                request.VariableName));
         }
 
         TokenRequestContext requestContext = new([scope], tenantId: tenantId);
@@ -82,7 +72,7 @@ internal sealed partial class EntraAccessTokenProvider(Lazy<TokenCredential> cre
             // CredentialUnavailableException derives from AuthenticationFailedException, so this covers both.
             throw new HttpFileException(
                 Messages.Format(
-                    s_entraAccessTokenFailedFormat,
+                    Resources.EntraAccessTokenFailed,
                     request.VariableName,
                     scope,
                     tenantId ?? Resources.EntraAccessTokenDefaultTenant,
@@ -125,7 +115,7 @@ internal sealed partial class EntraAccessTokenProvider(Lazy<TokenCredential> cre
         }
 
         log.Write(Messages.Format(
-            s_verboseTokenFormat,
+            Resources.VerboseToken,
             scope,
             TenantOf(accessToken.Token) ?? Resources.VerboseTokenTenantUnknown,
             accessToken.ExpiresOn.ToUniversalTime().ToString(ExpiryFormat, CultureInfo.InvariantCulture)));

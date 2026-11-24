@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 
 namespace DotNetHttpFile;
 
@@ -13,6 +12,14 @@ internal static class Messages
     /// </summary>
     public const string ListSeparator = ", ";
 
-    public static string Format(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
+    /// <summary>
+    /// Formats a message in the current culture.
+    /// </summary>
+    /// <param name="format">A composite format string from <see cref="Resources"/>.</param>
+    /// <param name="arguments">The values for the format items.</param>
+    /// <returns>
+    /// The formatted message.
+    /// </returns>
+    public static string Format(string format, params ReadOnlySpan<object?> arguments) =>
         string.Format(CultureInfo.CurrentCulture, format, arguments);
 }

@@ -1,4 +1,3 @@
-using System.Text;
 using DotNetHttpFile.Resolution;
 using Spectre.Console;
 
@@ -12,8 +11,6 @@ namespace DotNetHttpFile.Output;
 /// <param name="mask">The provider-resolved values of the run, or null to write the lines unmasked.</param>
 internal sealed class DiagnosticLog(IAnsiConsole error, SecretMask? mask = null)
 {
-    private static readonly CompositeFormat s_outputVerboseFormat = CompositeFormat.Parse(Resources.OutputVerbose);
-
     private static readonly Style s_style = new(foreground: Color.Grey);
 
     /// <summary>
@@ -34,7 +31,7 @@ internal sealed class DiagnosticLog(IAnsiConsole error, SecretMask? mask = null)
             return;
         }
 
-        string line = Messages.Format(s_outputVerboseFormat, message);
+        string line = Messages.Format(Resources.OutputVerbose, message);
 
         // Masked before the line breaks are made visible, so a secret that holds one still matches.
         ConsoleText.WriteLine(error, mask?.Apply(line) ?? line, s_style);

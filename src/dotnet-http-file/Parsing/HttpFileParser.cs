@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.RegularExpressions;
 using DotNetHttpFile.Templates;
 
@@ -33,24 +32,6 @@ internal static partial class HttpFileParser
         "TRACE",
         "CONNECT",
     ];
-
-    private static readonly CompositeFormat s_duplicateRequestNameFormat =
-        CompositeFormat.Parse(Resources.DuplicateRequestName);
-
-    private static readonly CompositeFormat s_invalidHeaderFormat =
-        CompositeFormat.Parse(Resources.InvalidHeader);
-
-    private static readonly CompositeFormat s_invalidRequestNameFormat =
-        CompositeFormat.Parse(Resources.InvalidRequestName);
-
-    private static readonly CompositeFormat s_invalidVariableDefinitionFormat =
-        CompositeFormat.Parse(Resources.InvalidVariableDefinition);
-
-    private static readonly CompositeFormat s_messageAtLineFormat =
-        CompositeFormat.Parse(Resources.MessageAtLine);
-
-    private static readonly CompositeFormat s_unknownHttpMethodFormat =
-        CompositeFormat.Parse(Resources.UnknownHttpMethod);
 
     /// <summary>
     /// Parses the text of an <c>.http</c> file into its variables and request definitions.
@@ -198,7 +179,7 @@ internal static partial class HttpFileParser
         if (names.Length != 1)
         {
             throw new HttpFileException(Messages.Format(
-                s_invalidRequestNameFormat,
+                Resources.InvalidRequestName,
                 LeadingToken(names.FirstOrDefault(string.Empty)),
                 line));
         }
@@ -220,7 +201,7 @@ internal static partial class HttpFileParser
         string name = assignment < 0 ? string.Empty : text[1..assignment].TrimEnd();
         if (!FileVariable.IsValidName(name))
         {
-            throw new HttpFileException(Messages.Format(s_invalidVariableDefinitionFormat, LeadingToken(text), line));
+            throw new HttpFileException(Messages.Format(Resources.InvalidVariableDefinition, LeadingToken(text), line));
         }
 
         return new FileVariable(name, ParseTemplate(text[(assignment + 1)..].TrimStart(), line), line);
@@ -238,7 +219,7 @@ internal static partial class HttpFileParser
             method = target[..methodEnd];
             if (!s_methods.Contains(method))
             {
-                throw new HttpFileException(Messages.Format(s_unknownHttpMethodFormat, LeadingToken(method), line));
+                throw new HttpFileException(Messages.Format(Resources.UnknownHttpMethod, LeadingToken(method), line));
             }
 
             url = target[methodEnd..].TrimStart();
@@ -298,7 +279,7 @@ internal static partial class HttpFileParser
         string name = delimiter < 0 ? string.Empty : text[..delimiter].TrimEnd();
         if (name.Length == 0 || name.Any(char.IsWhiteSpace))
         {
-            throw new HttpFileException(Messages.Format(s_invalidHeaderFormat, LeadingToken(text), line));
+            throw new HttpFileException(Messages.Format(Resources.InvalidHeader, LeadingToken(text), line));
         }
 
         return new HeaderDefinition(name, ParseTemplate(text[(delimiter + 1)..].TrimStart(), line), line);
@@ -330,7 +311,7 @@ internal static partial class HttpFileParser
             int expressionLine = line + CountLineTerminators(text.AsSpan(0, exception.ExpressionOffset ?? 0));
             string message = exception.Message.EndsWith(Period) ? exception.Message[..^1] : exception.Message;
 
-            throw new HttpFileException(Messages.Format(s_messageAtLineFormat, message, expressionLine), exception);
+            throw new HttpFileException(Messages.Format(Resources.MessageAtLine, message, expressionLine), exception);
         }
     }
 
@@ -370,7 +351,7 @@ internal static partial class HttpFileParser
             }
 
             throw new HttpFileException(Messages.Format(
-                s_duplicateRequestNameFormat,
+                Resources.DuplicateRequestName,
                 request.Name,
                 linesByName[request.Name],
                 request.Line));

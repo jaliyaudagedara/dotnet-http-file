@@ -1,6 +1,5 @@
 using System.Buffers;
 using System.Globalization;
-using System.Text;
 using DotNetHttpFile.Execution;
 using DotNetHttpFile.Parsing;
 using DotNetHttpFile.Resolution;
@@ -26,16 +25,6 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     // The characters of an RFC 9110 token, which is what an authentication scheme is made of.
     private static readonly SearchValues<char> s_tokenCharacters = SearchValues.Create(
         "!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
-
-    private static readonly CompositeFormat s_binaryBodySummaryFormat =
-        CompositeFormat.Parse(Resources.BinaryBodySummary);
-
-    private static readonly CompositeFormat s_binaryBodySummaryNoContentTypeFormat =
-        CompositeFormat.Parse(Resources.BinaryBodySummaryNoContentType);
-
-    private static readonly CompositeFormat s_outputErrorFormat = CompositeFormat.Parse(Resources.OutputError);
-
-    private static readonly CompositeFormat s_outputWarningFormat = CompositeFormat.Parse(Resources.OutputWarning);
 
     private static readonly Style s_successStyle = new(foreground: Color.Green);
     private static readonly Style s_redirectStyle = new(foreground: Color.Yellow);
@@ -125,7 +114,7 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        WriteMaskedLines(console.Error, Messages.Format(s_outputWarningFormat, message), s_warningStyle);
+        WriteMaskedLines(console.Error, Messages.Format(Resources.OutputWarning, message), s_warningStyle);
     }
 
     /// <summary>
@@ -135,7 +124,7 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        WriteMaskedLines(console.Error, Messages.Format(s_outputErrorFormat, message), s_failureStyle);
+        WriteMaskedLines(console.Error, Messages.Format(Resources.OutputError, message), s_failureStyle);
     }
 
     /// <summary>
@@ -165,8 +154,8 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
         string size = FormatSize(response.Body.Length);
 
         return string.IsNullOrWhiteSpace(contentType)
-            ? Messages.Format(s_binaryBodySummaryNoContentTypeFormat, size)
-            : Messages.Format(s_binaryBodySummaryFormat, size, contentType);
+            ? Messages.Format(Resources.BinaryBodySummaryNoContentType, size)
+            : Messages.Format(Resources.BinaryBodySummary, size, contentType);
     }
 
     private static string WithoutFinalLineBreak(string text)

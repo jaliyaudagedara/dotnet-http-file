@@ -31,52 +31,6 @@ internal sealed class HttpFileRunner(
 
     private static readonly byte[] s_wrongTenantCodeUtf8 = Encoding.UTF8.GetBytes(WrongTenantCode);
 
-    private static readonly CompositeFormat s_dependencyFailedFormat =
-        CompositeFormat.Parse(Resources.DependencyFailed);
-
-    private static readonly CompositeFormat s_fileNotFoundFormat = CompositeFormat.Parse(Resources.FileNotFound);
-
-    private static readonly CompositeFormat s_multipleRequestsNoNameFormat =
-        CompositeFormat.Parse(Resources.MultipleRequestsNoName);
-
-    private static readonly CompositeFormat s_multipleRequestsNoneNamedFormat =
-        CompositeFormat.Parse(Resources.MultipleRequestsNoneNamed);
-
-    private static readonly CompositeFormat s_noRequestsFormat = CompositeFormat.Parse(Resources.NoRequests);
-
-    private static readonly CompositeFormat s_requestNameNotFoundFormat =
-        CompositeFormat.Parse(Resources.RequestNameNotFound);
-
-    private static readonly CompositeFormat s_requestNameNotFoundNoneNamedFormat =
-        CompositeFormat.Parse(Resources.RequestNameNotFoundNoneNamed);
-
-    private static readonly CompositeFormat s_requestTitleAmbiguousFormat =
-        CompositeFormat.Parse(Resources.RequestTitleAmbiguous);
-
-    private static readonly CompositeFormat s_unexpectedErrorFormat =
-        CompositeFormat.Parse(Resources.UnexpectedError);
-
-    private static readonly CompositeFormat s_varOptionNotUsedFormat =
-        CompositeFormat.Parse(Resources.VarOptionNotUsed);
-
-    private static readonly CompositeFormat s_verboseDecodedFormat = CompositeFormat.Parse(Resources.VerboseDecoded);
-
-    private static readonly CompositeFormat s_verboseDotEnvFileFormat =
-        CompositeFormat.Parse(Resources.VerboseDotEnvFile);
-
-    private static readonly CompositeFormat s_verboseEnvironmentFormat =
-        CompositeFormat.Parse(Resources.VerboseEnvironment);
-
-    private static readonly CompositeFormat s_verboseEnvironmentFileFormat =
-        CompositeFormat.Parse(Resources.VerboseEnvironmentFile);
-
-    private static readonly CompositeFormat s_verboseExchangeFormat =
-        CompositeFormat.Parse(Resources.VerboseExchange);
-
-    private static readonly CompositeFormat s_verboseHttpFileFormat = CompositeFormat.Parse(Resources.VerboseHttpFile);
-
-    private static readonly CompositeFormat s_verbosePlanFormat = CompositeFormat.Parse(Resources.VerbosePlan);
-
     /// <summary>
     /// Sends the request <paramref name="options"/> selects and writes the outcome to the console.
     /// </summary>
@@ -121,7 +75,10 @@ internal sealed class HttpFileRunner(
         catch (Exception exception)
         {
             // A stack trace helps nobody at a prompt; the type and message are enough to report a bug.
-            renderer.RenderError(Messages.Format(s_unexpectedErrorFormat, exception.GetType().Name, Detail(exception)));
+            renderer.RenderError(Messages.Format(
+                Resources.UnexpectedError,
+                exception.GetType().Name,
+                Detail(exception)));
 
             return ExitCodes.NotSent;
         }
@@ -164,7 +121,7 @@ internal sealed class HttpFileRunner(
         // A missing file is not read; the $dotenv error names the path.
         if (dotEnv.Values is not null)
         {
-            log.Write(Messages.Format(s_verboseDotEnvFileFormat, dotEnv.Path));
+            log.Write(Messages.Format(Resources.VerboseDotEnvFile, dotEnv.Path));
         }
 
         return dotEnv;
@@ -180,17 +137,17 @@ internal sealed class HttpFileRunner(
         string filePath = options.FilePath;
         if (!File.Exists(filePath))
         {
-            throw new HttpFileException(Messages.Format(s_fileNotFoundFormat, filePath));
+            throw new HttpFileException(Messages.Format(Resources.FileNotFound, filePath));
         }
 
-        log.Write(Messages.Format(s_verboseHttpFileFormat, Path.GetFullPath(filePath)));
+        log.Write(Messages.Format(Resources.VerboseHttpFile, Path.GetFullPath(filePath)));
         HttpFile file = await ReadFilesAsync(() => HttpFileParser.LoadAsync(filePath, cancellationToken))
             .ConfigureAwait(false);
 
         string? environmentFilePath = EnvironmentFileLocator.Find(filePath);
         log.Write(environmentFilePath is null
             ? Resources.VerboseNoEnvironmentFile
-            : Messages.Format(s_verboseEnvironmentFileFormat, environmentFilePath));
+            : Messages.Format(Resources.VerboseEnvironmentFile, environmentFilePath));
         EnvironmentSet environment = await ReadFilesAsync(() => EnvironmentLoader.LoadAsync(
             environmentFilePath,
             options.EnvironmentName,
@@ -199,14 +156,14 @@ internal sealed class HttpFileRunner(
             cancellationToken)).ConfigureAwait(false);
         log.Write(environment.SelectedName is null
             ? Resources.VerboseNoEnvironment
-            : Messages.Format(s_verboseEnvironmentFormat, environment.SelectedName));
+            : Messages.Format(Resources.VerboseEnvironment, environment.SelectedName));
 
         RequestDefinition target = await SelectRequestAsync(file, options.RequestName, cancellationToken)
             .ConfigureAwait(false);
         WarnOfUnusedVariables(file, options.Variables, renderer);
         IReadOnlyList<RequestDefinition> plan = DependencyPlanner.Plan(file, target, options.Variables);
         log.Write(Messages.Format(
-            s_verbosePlanFormat,
+            Resources.VerbosePlan,
             string.Join(
                 Messages.ListSeparator,
                 plan.Select(request => request.DisplayName))));
@@ -238,7 +195,7 @@ internal sealed class HttpFileRunner(
             if (!exchange.Response.IsSuccess)
             {
                 renderer.RenderError(Messages.Format(
-                    s_dependencyFailedFormat,
+                    Resources.DependencyFailed,
                     dependency.DisplayName,
                     ResponseRenderer.StatusText(exchange.Response),
                     target.DisplayName));
@@ -299,7 +256,7 @@ internal sealed class HttpFileRunner(
         HashSet<string> referenced = file.ReferencedVariableNames();
         foreach (string name in overrides.Keys.Where(name => !referenced.Contains(name)))
         {
-            renderer.RenderWarning(Messages.Format(s_varOptionNotUsedFormat, name, file.Path));
+            renderer.RenderWarning(Messages.Format(Resources.VarOptionNotUsed, name, file.Path));
         }
     }
 
@@ -323,7 +280,7 @@ internal sealed class HttpFileRunner(
     private static void LogExchange(DiagnosticLog log, ResolvedRequest request, ReceivedResponse response)
     {
         log.Write(Messages.Format(
-            s_verboseExchangeFormat,
+            Resources.VerboseExchange,
             request.Method,
             request.DisplayUrl,
             ResponseRenderer.StatusText(response),
@@ -333,7 +290,7 @@ internal sealed class HttpFileRunner(
         IReadOnlyList<string> codings = response.ContentCodings;
         if (codings.Count > 0 && response.UnsupportedCodings.Count == 0)
         {
-            log.Write(Messages.Format(s_verboseDecodedFormat, string.Join(Messages.ListSeparator, codings)));
+            log.Write(Messages.Format(Resources.VerboseDecoded, string.Join(Messages.ListSeparator, codings)));
         }
     }
 
@@ -355,7 +312,7 @@ internal sealed class HttpFileRunner(
         if (titled.Length > 1)
         {
             throw new HttpFileException(Messages.Format(
-                s_requestTitleAmbiguousFormat,
+                Resources.RequestTitleAmbiguous,
                 requestName,
                 string.Join(Messages.ListSeparator, titled.Select(request => request.Line))));
         }
@@ -371,7 +328,7 @@ internal sealed class HttpFileRunner(
         IReadOnlyList<RequestDefinition> requests = file.Requests;
         if (requests.Count == 0)
         {
-            throw new HttpFileException(Messages.Format(s_noRequestsFormat, file.Path));
+            throw new HttpFileException(Messages.Format(Resources.NoRequests, file.Path));
         }
 
         string[] names =
@@ -387,8 +344,8 @@ internal sealed class HttpFileRunner(
         {
             return FindRequest(requests, requestName)
                 ?? throw new HttpFileException(names.Length == 0
-                    ? Messages.Format(s_requestNameNotFoundNoneNamedFormat, requestName, file.Path)
-                    : Messages.Format(s_requestNameNotFoundFormat, requestName, file.Path, nameList));
+                    ? Messages.Format(Resources.RequestNameNotFoundNoneNamed, requestName, file.Path)
+                    : Messages.Format(Resources.RequestNameNotFound, requestName, file.Path, nameList));
         }
 
         if (requests.Count == 1)
@@ -403,8 +360,8 @@ internal sealed class HttpFileRunner(
         }
 
         throw new HttpFileException(names.Length == 0
-            ? Messages.Format(s_multipleRequestsNoneNamedFormat, file.Path, requests.Count)
-            : Messages.Format(s_multipleRequestsNoNameFormat, file.Path, requests.Count, nameList));
+            ? Messages.Format(Resources.MultipleRequestsNoneNamed, file.Path, requests.Count)
+            : Messages.Format(Resources.MultipleRequestsNoName, file.Path, requests.Count, nameList));
     }
 
     private DynamicVariables CreateDynamicVariables(string httpFilePath, DiagnosticLog log)

@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -13,12 +12,6 @@ namespace DotNetHttpFile.Secrets;
 /// <param name="EnvironmentFileDirectory">The folder that holds the environment file.</param>
 internal sealed record SecretRequest(string VariableName, JsonObject Definition, string EnvironmentFileDirectory)
 {
-    private static readonly CompositeFormat s_secretFieldInvalidFormat =
-        CompositeFormat.Parse(Resources.SecretFieldInvalid);
-
-    private static readonly CompositeFormat s_secretFieldMissingFormat =
-        CompositeFormat.Parse(Resources.SecretFieldMissing);
-
     /// <summary>
     /// Reads a required string property of the definition.
     /// </summary>
@@ -30,7 +23,11 @@ internal sealed record SecretRequest(string VariableName, JsonObject Definition,
             return value;
         }
 
-        throw new HttpFileException(Messages.Format(s_secretFieldMissingFormat, VariableName, providerName, fieldName));
+        throw new HttpFileException(Messages.Format(
+            Resources.SecretFieldMissing,
+            VariableName,
+            providerName,
+            fieldName));
     }
 
     /// <summary>
@@ -52,7 +49,11 @@ internal sealed record SecretRequest(string VariableName, JsonObject Definition,
             return value;
         }
 
-        throw new HttpFileException(Messages.Format(s_secretFieldInvalidFormat, VariableName, providerName, fieldName));
+        throw new HttpFileException(Messages.Format(
+            Resources.SecretFieldInvalid,
+            VariableName,
+            providerName,
+            fieldName));
     }
 
     // The generated record text would print the definition, which can hold an encrypted value.

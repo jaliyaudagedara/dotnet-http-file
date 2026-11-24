@@ -22,11 +22,6 @@ internal static partial class GraphQLRequest
     private const char ClosingBrace = '}';
     private const char StringQuote = '"';
 
-    private static readonly CompositeFormat s_queryMissingFormat = CompositeFormat.Parse(Resources.GraphQLQueryMissing);
-
-    private static readonly CompositeFormat s_variablesNotObjectFormat =
-        CompositeFormat.Parse(Resources.GraphQLVariablesNotObject);
-
     // The same encoder the secret mask registers JSON forms with, so a secret escaped into the query still matches.
     private static readonly JsonWriterOptions s_writerOptions = new()
     {
@@ -64,7 +59,7 @@ internal static partial class GraphQLRequest
         using JsonDocument? variablesDocument = variables;
         if (query.Length == 0)
         {
-            throw new HttpFileException(Messages.Format(s_queryMissingFormat, line));
+            throw new HttpFileException(Messages.Format(Resources.GraphQLQueryMissing, line));
         }
 
         List<KeyValuePair<string, string>> headers = [with(capacity: request.Headers.Count)];
@@ -122,7 +117,7 @@ internal static partial class GraphQLRequest
         // hide. Not only the last block: the variables may hold a blank line of their own.
         if (blankLines.Any(blankLine => StartsLikeJsonObject(TextAfter(body, blankLine))))
         {
-            throw new HttpFileException(Messages.Format(s_variablesNotObjectFormat, line));
+            throw new HttpFileException(Messages.Format(Resources.GraphQLVariablesNotObject, line));
         }
 
         return (body.TrimStart(), null);
