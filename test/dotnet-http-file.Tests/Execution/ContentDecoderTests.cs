@@ -6,6 +6,15 @@ namespace DotNetHttpFile.Tests.Execution;
 
 public sealed class ContentDecoderTests
 {
+    private const int GzipFixedHeaderLength = 10;
+    private const int GzipMethodOffset = 2;
+    private const int GzipFlagsOffset = 3;
+    private const byte UnknownGzipMethod = 0x09;
+    private const byte GzipReservedFlag = 0x20;
+    private const int GzipHeaderCrcLength = 2;
+    private const int GzipTrailerLength = 8;
+    private const int GzipSizeLength = 4;
+
     private static readonly byte[] s_content = """{"title": "Write blog post"}"""u8.ToArray();
 
     [Theory]
@@ -139,6 +148,89 @@ public sealed class ContentDecoderTests
         Assert.Throws<InvalidDataException>(() => Decode([.. member, .. member[..(member.Length / 2)]], "gzip"));
     }
 
+    [Fact]
+    public void Decode_RawDeflateWithAMalformedHuffmanHeader_ThrowsInvalidDataException()
+    {
+        byte[] body = [0xDD, 0x5A, 0x40, 0x24, 0x95];
+
+        Assert.Throws<InvalidDataException>(() => Decode(body, "deflate"));
+    }
+
+    [Fact]
+    public void Decode_GzipWhoseSecondMemberHasAnUnknownMethod_ThrowsInvalidDataException()
+    {
+        byte[] member = Compression.Gzip(s_content);
+        byte[] second = [.. member];
+        second[GzipMethodOffset] = UnknownGzipMethod;
+
+        Assert.Throws<InvalidDataException>(() => Decode([.. member, .. second], "gzip"));
+    }
+
+    [Fact]
+    public void Decode_GzipFollowedByTheStartOfAMemberWithAnUnknownMethod_ThrowsInvalidDataException()
+    {
+        byte[] member = Compression.Gzip(s_content);
+
+        Assert.Throws<InvalidDataException>(() => Decode([.. member, 0x1F, 0x8B, UnknownGzipMethod], "gzip"));
+    }
+
+    [Fact]
+    public void Decode_GzipFollowedByTheFirstByteOfAMemberStart_ReturnsContent()
+    {
+        byte[] member = Compression.Gzip(s_content);
+
+        byte[]? decoded = Decode([.. member, 0x1F], "gzip");
+
+        Assert.Equal(s_content, decoded);
+    }
+
+    [Fact]
+    public void Decode_GzipWithEveryOptionalHeaderField_ReturnsContent()
+    {
+        byte[] header = GzipHeaderWithEveryOptionalField();
+
+        byte[]? decoded = Decode([.. header, .. GzipHeaderCrc(header), .. GzipDataAndTrailer()], "gzip");
+
+        Assert.Equal(s_content, decoded);
+    }
+
+    [Fact]
+    public void Decode_GzipWithAWrongHeaderCrc_ThrowsInvalidDataException()
+    {
+        byte[] header = GzipHeaderWithEveryOptionalField();
+        byte[] headerCrc = GzipHeaderCrc(header);
+        headerCrc[0] ^= 1;
+
+        Assert.Throws<InvalidDataException>(() => Decode([.. header, .. headerCrc, .. GzipDataAndTrailer()], "gzip"));
+    }
+
+    [Fact]
+    public void Decode_GzipWithAReservedFlagSet_ThrowsInvalidDataException()
+    {
+        byte[] body = Compression.Gzip(s_content);
+        body[GzipFlagsOffset] = GzipReservedFlag;
+
+        Assert.Throws<InvalidDataException>(() => Decode(body, "gzip"));
+    }
+
+    [Fact]
+    public void Decode_GzipWithAWrongCrc32_ThrowsInvalidDataException()
+    {
+        byte[] body = Compression.Gzip(s_content);
+        body[^GzipTrailerLength] ^= 1;
+
+        Assert.Throws<InvalidDataException>(() => Decode(body, "gzip"));
+    }
+
+    [Fact]
+    public void Decode_GzipWithAWrongSize_ThrowsInvalidDataException()
+    {
+        byte[] body = Compression.Gzip(s_content);
+        body[^GzipSizeLength] ^= 1;
+
+        Assert.Throws<InvalidDataException>(() => Decode(body, "gzip"));
+    }
+
     [Theory]
     [InlineData("gzip")]
     [InlineData("deflate")]
@@ -212,4 +304,35 @@ public sealed class ContentDecoderTests
 
     private static byte[]? Decode(byte[] body, string coding) =>
         ContentDecoder.Decode(body, coding, ContentDecoder.MaxDecodedLength, TestContext.Current.CancellationToken);
+
+    // RFC 1952: ID1, ID2, CM (deflate), FLG (FTEXT, FHCRC, FEXTRA, FNAME, FCOMMENT), MTIME, XFL, OS, then the
+    // extra field, the name and the comment. The two-byte header CRC that FHCRC asks for comes next.
+    private static byte[] GzipHeaderWithEveryOptionalField() =>
+    [
+        0x1F,
+        0x8B,
+        0x08,
+        0x1F,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0xFF,
+        0x03,
+        0x00,
+        0x01,
+        0x02,
+        0x03,
+        .. "name"u8,
+        0x00,
+        .. "comment"u8,
+        0x00,
+    ];
+
+    // The low two bytes of the CRC-32 of the header. A gzip trailer starts with the CRC-32 of its content.
+    private static byte[] GzipHeaderCrc(byte[] header) =>
+        Compression.Gzip(header)[^GzipTrailerLength..^(GzipTrailerLength - GzipHeaderCrcLength)];
+
+    private static byte[] GzipDataAndTrailer() => Compression.Gzip(s_content)[GzipFixedHeaderLength..];
 }

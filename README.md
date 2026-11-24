@@ -5,7 +5,7 @@ access tokens come from your existing sign-in, so no token is pasted into a file
 
 ## Install
 
-Needs the .NET 11 SDK.
+Needs the .NET 10 SDK or later.
 
 ```bash
 dotnet tool install -g dotnet-http-file
