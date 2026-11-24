@@ -14,6 +14,7 @@ internal static class CommandLine
     private const string NameOptionName = "--name";
     private const string NameOptionAlias = "-n";
     private const string NameOptionHelpName = "name";
+    private const string ListOptionName = "--list";
     private const string EnvOptionName = "--env";
     private const string EnvOptionAlias = "-e";
     private const string EnvOptionHelpName = "env";
@@ -67,6 +68,10 @@ internal static class CommandLine
             Description = Resources.NameOptionDescription,
             HelpName = NameOptionHelpName,
         };
+        Option<bool> listOption = new(ListOptionName)
+        {
+            Description = Resources.ListOptionDescription,
+        };
         Option<string?> envOption = new(EnvOptionName, EnvOptionAlias)
         {
             Description = Resources.EnvOptionDescription,
@@ -100,17 +105,26 @@ internal static class CommandLine
         {
             fileArgument,
             nameOption,
+            listOption,
             envOption,
             verboseOption,
             showOption,
             insecureOption,
             varOption,
         };
+        rootCommand.Validators.Add(result =>
+        {
+            if (result.GetValue(listOption) && result.GetResult(nameOption) is not null)
+            {
+                result.AddError(Resources.ListOptionWithName);
+            }
+        });
         rootCommand.SetAction((parseResult, actionCancellationToken) =>
         {
             RunOptions options = new(parseResult.GetRequiredValue(fileArgument))
             {
                 RequestName = parseResult.GetValue(nameOption),
+                List = parseResult.GetValue(listOption),
                 EnvironmentName = parseResult.GetValue(envOption),
                 ForcedMode = ShowMode(parseResult.GetValue(showOption)),
                 Insecure = parseResult.GetValue(insecureOption),

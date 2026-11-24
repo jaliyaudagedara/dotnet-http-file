@@ -71,6 +71,55 @@ public sealed class CommandLineTests
     }
 
     [Fact]
+    public async Task Main_List_PassesItToTheRun()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--list");
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(new RunOptions(path) { List = true }, Assert.Single(harness.Runs));
+        Assert.Empty(harness.Error.Output);
+    }
+
+    [Theory]
+    [InlineData("--name")]
+    [InlineData("-n")]
+    public async Task Main_ListWithName_ReturnsNotSent(string nameOption)
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--list", nameOption, "todos");
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(["error: --list can't be used with --name."], harness.ErrorLines);
+        Assert.Empty(harness.Runs);
+        Assert.Empty(harness.Output.Output);
+    }
+
+    [Fact]
+    public async Task Main_ListWithOtherOptions_PassesThemToTheRun()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteFileAsync(HttpFileName);
+
+        int exitCode = await harness.InvokeAsync(path, "--list", "-e", "dev", "--show", "body", "-k", "-v");
+
+        RunOptions expected = new(path)
+        {
+            List = true,
+            EnvironmentName = "dev",
+            ForcedMode = OutputMode.Body,
+            Insecure = true,
+            Verbose = true,
+        };
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(expected, Assert.Single(harness.Runs));
+    }
+
+    [Fact]
     public async Task Main_VarRepeated_ParsesEach()
     {
         using Harness harness = new();
@@ -588,6 +637,7 @@ public sealed class CommandLineTests
         Assert.DoesNotContain("--body", help, StringComparison.Ordinal);
         Assert.DoesNotContain("--output", help, StringComparison.Ordinal);
         Assert.Contains("-k, --insecure", help, StringComparison.Ordinal);
+        Assert.Contains("  --list", help, StringComparison.Ordinal);
         Assert.Empty(harness.Error.Output);
         Assert.Empty(harness.Runs);
     }

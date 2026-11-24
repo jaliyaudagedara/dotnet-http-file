@@ -9,7 +9,7 @@ using DotNetHttpFile.Secrets;
 namespace DotNetHttpFile.Cli;
 
 /// <summary>
-/// Runs one request of an <c>.http</c> file, after the requests it refers to.
+/// Runs one request of an <c>.http</c> file, after the requests it refers to, or lists what <c>--name</c> accepts.
 /// </summary>
 /// <param name="console">The streams the run writes to.</param>
 /// <param name="picker">Picks the request when none is named and a terminal can ask.</param>
@@ -32,12 +32,14 @@ internal sealed class HttpFileRunner(
     private static readonly byte[] s_wrongTenantCodeUtf8 = Encoding.UTF8.GetBytes(WrongTenantCode);
 
     /// <summary>
-    /// Sends the request <paramref name="options"/> selects and writes the outcome to the console.
+    /// Sends the request <paramref name="options"/> selects and writes the outcome to the console, or for
+    /// <see cref="RunOptions.List"/> writes the name, else the title, of each request.
     /// </summary>
     /// <returns>
-    /// <see cref="ExitCodes.Success"/> for a 2xx response, <see cref="ExitCodes.ErrorStatus"/> for any other
-    /// response or for one whose body could not be decoded, <see cref="ExitCodes.NotSent"/> when the request could
-    /// not be sent and <see cref="ExitCodes.Cancelled"/> when <paramref name="cancellationToken"/> was cancelled.
+    /// <see cref="ExitCodes.Success"/> for a 2xx response or a list, <see cref="ExitCodes.ErrorStatus"/> for any
+    /// other response or for one whose body could not be decoded, <see cref="ExitCodes.NotSent"/> when the request
+    /// could not be sent and <see cref="ExitCodes.Cancelled"/> when <paramref name="cancellationToken"/> was
+    /// cancelled.
     /// </returns>
     public async Task<int> RunAsync(RunOptions options, CancellationToken cancellationToken = default)
     {
@@ -50,7 +52,9 @@ internal sealed class HttpFileRunner(
 
         try
         {
-            return await RunCoreAsync(options, secretMask, renderer, log, cancellationToken).ConfigureAwait(false);
+            return options.List
+                ? await ListAsync(options.FilePath, renderer, log, cancellationToken).ConfigureAwait(false)
+                : await RunCoreAsync(options, secretMask, renderer, log, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -127,6 +131,52 @@ internal sealed class HttpFileRunner(
         return dotEnv;
     }
 
+    private static async Task<HttpFile> LoadHttpFileAsync(
+        string filePath,
+        DiagnosticLog log,
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(filePath))
+        {
+            throw new HttpFileException(Messages.Format(Resources.FileNotFound, filePath));
+        }
+
+        log.Write(Messages.Format(Resources.VerboseHttpFile, Path.GetFullPath(filePath)));
+
+        return await ReadFilesAsync(() => HttpFileParser.LoadAsync(filePath, cancellationToken))
+            .ConfigureAwait(false);
+    }
+
+    // Only the file is read: no environment, variable or provider, so nothing resolved can be printed.
+    // Each line is one that --name selects the request with, so a script can run every line it gets.
+    private async Task<int> ListAsync(
+        string filePath,
+        ResponseRenderer renderer,
+        DiagnosticLog log,
+        CancellationToken cancellationToken)
+    {
+        HttpFile file = await LoadHttpFileAsync(filePath, log, cancellationToken).ConfigureAwait(false);
+        foreach (RequestDefinition request in file.Requests)
+        {
+            if (request.NameOrTitle is not string selector)
+            {
+                renderer.RenderWarning(file.Path, request.Line, Resources.ListRequestWithoutName);
+                continue;
+            }
+
+            RequestDefinition[] matches = Matches(file.Requests, selector);
+            if (matches is [RequestDefinition match] && ReferenceEquals(match, request))
+            {
+                ConsoleText.WriteLine(console.Output, selector);
+                continue;
+            }
+
+            renderer.RenderWarning(file.Path, request.Line, NotListedReason(request, selector, matches));
+        }
+
+        return ExitCodes.Success;
+    }
+
     private async Task<int> RunCoreAsync(
         RunOptions options,
         SecretMask secretMask,
@@ -135,14 +185,7 @@ internal sealed class HttpFileRunner(
         CancellationToken cancellationToken)
     {
         string filePath = options.FilePath;
-        if (!File.Exists(filePath))
-        {
-            throw new HttpFileException(Messages.Format(Resources.FileNotFound, filePath));
-        }
-
-        log.Write(Messages.Format(Resources.VerboseHttpFile, Path.GetFullPath(filePath)));
-        HttpFile file = await ReadFilesAsync(() => HttpFileParser.LoadAsync(filePath, cancellationToken))
-            .ConfigureAwait(false);
+        HttpFile file = await LoadHttpFileAsync(filePath, log, cancellationToken).ConfigureAwait(false);
 
         string? environmentFilePath = EnvironmentFileLocator.Find(filePath);
         log.Write(environmentFilePath is null
@@ -294,30 +337,55 @@ internal sealed class HttpFileRunner(
         }
     }
 
-    // A name wins over a title, so a title never hides a request that has that name.
-    private static RequestDefinition? FindRequest(IReadOnlyList<RequestDefinition> requests, string requestName)
+    // Each request left out gets its own reason, naming the other requests that take its selector.
+    private static string NotListedReason(
+        RequestDefinition request,
+        string selector,
+        IReadOnlyList<RequestDefinition> matches)
     {
-        RequestDefinition? named = requests.FirstOrDefault(
-            request => string.Equals(request.Name, requestName, StringComparison.Ordinal));
-        if (named is not null)
+        if (matches is [RequestDefinition named])
         {
-            return named;
+            return Messages.Format(Resources.ListTitleIsAName, selector, named.Line);
         }
 
-        RequestDefinition[] titled =
-        [
-            .. requests.Where(
-                request => string.Equals(request.Title, requestName, StringComparison.OrdinalIgnoreCase)),
-        ];
-        if (titled.Length > 1)
+        int[] otherLines = [.. matches.Where(other => !ReferenceEquals(other, request)).Select(other => other.Line)];
+
+        return otherLines.Length == 1
+            ? Messages.Format(Resources.ListTitleSharedWithOne, selector, otherLines[0])
+            : Messages.Format(
+                Resources.ListTitleSharedWithMany,
+                selector,
+                string.Join(Messages.ListSeparator, otherLines));
+    }
+
+    private static RequestDefinition? FindRequest(IReadOnlyList<RequestDefinition> requests, string requestName)
+    {
+        RequestDefinition[] matches = Matches(requests, requestName);
+        if (matches.Length > 1)
         {
             throw new HttpFileException(Messages.Format(
                 Resources.RequestTitleAmbiguous,
                 requestName,
-                string.Join(Messages.ListSeparator, titled.Select(request => request.Line))));
+                string.Join(Messages.ListSeparator, matches.Select(request => request.Line))));
         }
 
-        return titled.SingleOrDefault();
+        return matches.SingleOrDefault();
+    }
+
+    // The requests --name finds for requestName. A name wins over a title, so a title never hides a request
+    // that has that name; more than one match means requests share the title.
+    private static RequestDefinition[] Matches(IReadOnlyList<RequestDefinition> requests, string requestName)
+    {
+        RequestDefinition? named = requests.FirstOrDefault(
+            request => string.Equals(request.Name, requestName, StringComparison.Ordinal));
+
+        return named is not null
+            ? [named]
+            :
+            [
+                .. requests.Where(
+                    request => string.Equals(request.Title, requestName, StringComparison.OrdinalIgnoreCase)),
+            ];
     }
 
     private async Task<RequestDefinition> SelectRequestAsync(
