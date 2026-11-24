@@ -43,7 +43,7 @@ Piped, the tool writes only the body, so another tool can process it. This examp
 dotnet http-file samples/Basics/Named.http --name getToDos | jq -r '.[0].title'
 ```
 
-Override a variable for one run with `--var`. `getToDos` asks for `Limit` todos, 3 in the file; this asks for 1:
+Override a variable for one run with `--var`. `Limit` is 3 in the file; this run asks for 1 todo:
 
 ```bash
 dotnet http-file samples/Basics/Named.http --name getToDos --var Limit=1

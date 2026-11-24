@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net11.0</TargetFramework>
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
+    <!-- Runs the newest build on a later major runtime when neither target's runtime is installed. -->
+    <RollForward>Major</RollForward>
     <AssemblyName>dotnet-http-file</AssemblyName>
     <RootNamespace>DotNetHttpFile</RootNamespace>
     <NeutralLanguage>en</NeutralLanguage>
@@ -15,7 +17,7 @@
     <Version>0.2.0</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Authors>Jaliya Udagedara</Authors>
-    <Description>Run Visual Studio .http files from the command line.</Description>
+    <Description>Run .http files from the command line.</Description>
     <PackageTags>http;rest;dotnet-tool;visual-studio</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -43,6 +45,16 @@
     <PackageReference Include="Spectre.Console" />
     <PackageReference Include="System.CommandLine" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" />
+  </ItemGroup>
+
+  <!-- .NET 11 decodes gzip and deflate with its own span decoders; .NET 10 has none, so it uses SharpZipLib. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="SharpZipLib" />
+    <Compile Remove="**\*.Net11.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' != 'net10.0'">
+    <Compile Remove="**\*.Net10.cs" />
   </ItemGroup>
 
   <ItemGroup>

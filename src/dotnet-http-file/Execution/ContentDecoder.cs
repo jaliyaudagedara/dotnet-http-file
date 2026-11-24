@@ -1,12 +1,14 @@
 using System.Buffers;
-using System.IO.Compression;
 
 namespace DotNetHttpFile.Execution;
 
 /// <summary>
 /// Decodes a response body from the content codings the tool supports, gzip and deflate.
 /// </summary>
-internal static class ContentDecoder
+/// <remarks>
+/// The decoding itself is runtime-specific and lives in the other parts of this class.
+/// </remarks>
+internal static partial class ContentDecoder
 {
     /// <summary>
     /// The most bytes a body may decode to, 100 MiB.
@@ -28,7 +30,7 @@ internal static class ContentDecoder
     private const int ExpectedExpansion = 4;
     private const int ZlibHeaderLength = 2;
     private const int ZlibMethodMask = 0x0F;
-    private const int ZlibDeflateMethod = 8;
+    private const int DeflateMethod = 8;
     private const int ZlibWindowShift = 4;
     private const int ZlibMaxWindow = 7;
     private const int ZlibHeaderCheckDivisor = 31;
@@ -68,53 +70,43 @@ internal static class ContentDecoder
         ArgumentNullException.ThrowIfNull(body);
         ArgumentNullException.ThrowIfNull(coding);
 
-        if (IsGzip(coding))
-        {
-            using GZipDecoder gzipDecoder = new();
-
-            return Decode(body, gzipDecoder.Decompress, gzipDecoder.Reset, maxDecodedLength, cancellationToken);
-        }
-
-        if (!IsDeflate(coding))
+        if (!IsGzip(coding) && !IsDeflate(coding))
         {
             throw new ArgumentOutOfRangeException(nameof(coding), coding, null);
         }
 
-        if (HasZlibHeader(body))
-        {
-            using ZLibDecoder zlibDecoder = new();
-
-            return Decode(body, zlibDecoder.Decompress, startNextMember: null, maxDecodedLength, cancellationToken);
-        }
-
-        using DeflateDecoder deflateDecoder = new();
-
-        return Decode(body, deflateDecoder.Decompress, startNextMember: null, maxDecodedLength, cancellationToken);
-    }
-
-    // The decoders are used, and not the streams over them, because a stream ends a body that was cut short
-    // without a word, as if the part that arrived were the whole of it.
-    private static byte[]? Decode(
-        ReadOnlySpan<byte> source,
-        Decompress decompress,
-        Action? startNextMember,
-        int maxDecodedLength,
-        CancellationToken cancellationToken)
-    {
         // A body inside another coding can decode to nothing, which the decoders would take as cut short.
-        if (source.IsEmpty)
+        if (body.Length == 0)
         {
             return [];
         }
 
-        using MemoryStream output = new((int)Math.Min((long)source.Length * ExpectedExpansion, maxDecodedLength));
+        using IChunkDecoder decoder = IsGzip(coding) ? CreateGzipDecoder(body)
+            : HasZlibHeader(body) ? CreateZlibDecoder(body)
+            : CreateRawDeflateDecoder(body);
+
+        return Decode(decoder, body.Length, maxDecodedLength, cancellationToken);
+    }
+
+    private static partial IChunkDecoder CreateGzipDecoder(byte[] body);
+
+    private static partial IChunkDecoder CreateZlibDecoder(byte[] body);
+
+    private static partial IChunkDecoder CreateRawDeflateDecoder(byte[] body);
+
+    private static byte[]? Decode(
+        IChunkDecoder decoder,
+        int bodyLength,
+        int maxDecodedLength,
+        CancellationToken cancellationToken)
+    {
+        using MemoryStream output = new((int)Math.Min((long)bodyLength * ExpectedExpansion, maxDecodedLength));
         byte[] buffer = new byte[BufferSize];
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            OperationStatus status = decompress(source, buffer, out int consumed, out int written);
-            source = source[consumed..];
+            OperationStatus status = decoder.DecodeChunk(buffer, out int written);
             if (output.Length + written > maxDecodedLength)
             {
                 return null;
@@ -124,10 +116,6 @@ internal static class ContentDecoder
             switch (status)
             {
                 case OperationStatus.DestinationTooSmall:
-                    break;
-
-                case OperationStatus.Done when startNextMember is not null && source.StartsWith(s_gzipMemberStart):
-                    startNextMember();
                     break;
 
                 case OperationStatus.Done:
@@ -144,7 +132,7 @@ internal static class ContentDecoder
     // read as a big-endian number, a multiple of 31.
     private static bool HasZlibHeader(byte[] body) =>
         body.Length >= ZlibHeaderLength
-        && (body[0] & ZlibMethodMask) == ZlibDeflateMethod
+        && (body[0] & ZlibMethodMask) == DeflateMethod
         && body[0] >> ZlibWindowShift <= ZlibMaxWindow
         && ((body[0] << 8) | body[1]) % ZlibHeaderCheckDivisor == 0;
 
@@ -155,13 +143,4 @@ internal static class ContentDecoder
 
     private static bool IsDeflate(string coding) =>
         string.Equals(coding, DeflateCoding, StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// One step of decoding, which the gzip, zlib and deflate decoders have in common.
-    /// </summary>
-    private delegate OperationStatus Decompress(
-        ReadOnlySpan<byte> source,
-        Span<byte> destination,
-        out int bytesConsumed,
-        out int bytesWritten);
 }

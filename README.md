@@ -1,14 +1,17 @@
 # dotnet-http-file
 
-Run Visual Studio 2026 `.http` files from the command line, on Windows, Linux and macOS. Microsoft Entra
-access tokens come from your existing sign-in, so no token is pasted into a file.
+Run `.http` files from the command line, on Windows, Linux and macOS. The tool reads the
+[Visual Studio 2026 `.http` syntax](https://learn.microsoft.com/en-us/aspnet/core/test/http-files).
+Microsoft Entra access tokens come from your existing sign-in, so no token is pasted into a file.
 
 ## Install
 
-Needs the .NET 11 SDK.
+Needs the .NET 10 SDK or later. It installs as a [.NET tool](https://learn.microsoft.com/dotnet/core/tools/global-tools).
 
 ```bash
 dotnet tool install -g dotnet-http-file
+dotnet tool update -g dotnet-http-file
+dotnet tool uninstall -g dotnet-http-file
 ```
 
 Or run it without installing: `dnx dotnet-http-file MyApi.http --name getToDos`.
@@ -16,19 +19,22 @@ Or run it without installing: `dnx dotnet-http-file MyApi.http --name getToDos`.
 ## Use
 
 ```bash
+# Run the getToDos request with the dev environment from http-client.env.json
 dotnet http-file MyApi.http --name getToDos --env dev
+
+# Print only the response status line
 dotnet http-file MyApi.http --name getToDos --show status
+
+# Pipe the response body to jq
 dotnet http-file MyApi.http --name getToDos | jq '.[0].title'
 ```
 
-In a terminal it prints the request, with secrets masked, then the response status, headers and formatted body
-as the server sent them. When piped, it writes the raw body to stdout. Without `--name`, a terminal gets a
-request picker.
+In a terminal it prints the request, with secrets masked, then the response status, headers and formatted body.
+When piped, it writes only the response body. Without `--name`, a file with one request runs it, and in a
+terminal a file with more shows a list to pick from.
 
-Try [`samples/Basics/Named.http`](https://github.com/jaliyaudagedara/dotnet-http-file/blob/main/samples/Basics/Named.http)
-and [`samples/Basics/Titled.http`](https://github.com/jaliyaudagedara/dotnet-http-file/blob/main/samples/Basics/Titled.http)
-(no setup), or [`samples/Entra/Entra.http`](https://github.com/jaliyaudagedara/dotnet-http-file/blob/main/samples/Entra/Entra.http)
-(needs `az login`).
+Try the [samples](https://github.com/jaliyaudagedara/dotnet-http-file/tree/main/samples). The Basics need no
+setup; the Entra sample needs `az login`.
 
 ## Options
 
@@ -36,18 +42,18 @@ and [`samples/Basics/Titled.http`](https://github.com/jaliyaudagedara/dotnet-htt
 |---|---|
 | `-n`, `--name <name>` | The request to run, from `# @name <name>` or a `### <title>`. |
 | `-e`, `--env <env>` | The environment in `http-client.env.json`. |
-| `-v`, `--verbose` | Log what the tool does (files read, requests, tokens acquired) to stderr, never a token or secret-provider value. Changed in 0.2: it no longer means `--show full`. |
+| `-v`, `--verbose` | Log what the tool does to stderr: files read, requests, tokens acquired. Never logs a token or a secret-provider value. |
 | `--show <full\|body\|headers\|status>` | What to print. |
 | `-k`, `--insecure` | Skip server certificate validation. |
-| `--var <name=value>` | Set a variable for this run, over the file and the environment. Can be repeated; the last one wins. Names are case-sensitive, and a name no `{{name}}` in the file uses gets a warning. |
+| `--var <name=value>` | Set a variable for this run, over the file and the environment. Can be repeated. |
 
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
 | 0 | 2xx response. |
-| 1 | A non-2xx response from the selected request or from a request it depends on, or a response body that is not valid in its coding or decodes to more than 100 MiB. |
-| 2 | The selected request got no response: bad arguments, parse error, undefined variable, provider failure, network failure or timeout. Dependencies may already have been sent. Also any unexpected error in the tool. |
+| 1 | The server answered with a non-2xx status, for the request or a request it depends on, or the body could not be decoded. |
+| 2 | The request got no response: bad arguments, a parse error, an undefined variable, a secret provider failure, a network error, a timeout or an unexpected error. Dependencies may already have been sent. |
 | 130 | Cancelled with Ctrl+C. |
 
 ## Docs
