@@ -4,22 +4,19 @@
 
 Environment files (`http-client.env.json`, `.user`, `$shared`) and the `AzureKeyVault`, `AspnetUserSecrets`
 and `Encrypted` providers work as in
-[Visual Studio](https://learn.microsoft.com/aspnet/core/test/http-files#environment-files). Without `--env`,
+[Visual Studio](https://learn.microsoft.com/en-us/aspnet/core/test/http-files#environment-files). Without `--env`,
 only `$shared` and the file's own variables apply. `Encrypted` works on Windows only. `AzureKeyVault` reads
 only vaults in the public Azure cloud (`vault.azure.net`).
 
-Only a `.csproj` counts as a project. An F# (`.fsproj`) or Visual Basic (`.vbproj`) project is not found:
+`AspnetUserSecrets` and `$dotenv` look for a `.csproj` (not an `.fsproj` or `.vbproj`):
 
-- `AspnetUserSecrets` reads `UserSecretsId` from the `.csproj` in the folder of the environment file, not
-  from `Directory.Build.props`. Without a `.csproj` there, the variable fails with "no project file was
-  found".
-- `$dotenv` reads `.env` from the nearest folder with a `.csproj`, starting at the folder of the `.http` file
-  and going up. Without one, it reads the `.env` next to the `.http` file.
+- `AspnetUserSecrets` reads `UserSecretsId` from the `.csproj` in the environment file's folder, not from
+  `Directory.Build.props`.
+- `$dotenv` reads the `.env` in the nearest folder with a `.csproj`, starting at the `.http` file's folder and
+  going up. If there is none, it reads the `.env` next to the `.http` file.
 
-Values from a secret provider are masked. A literal value in an environment file or its `.user` file, a
-`--var` value, and a `$dotenv` or `$processEnv` value are not, except in an `Authorization`,
-`Proxy-Authorization` or `Cookie` request header. For a secret, use a secret provider in the environment file.
-See [Masking](output.md#masking).
+Only values from a secret provider are masked in the tool's output, so keep secrets in a provider, not as
+literal values. See [Masking](output.md#masking).
 
 ## EntraAccessToken
 
@@ -33,15 +30,12 @@ The tool's own provider: an Entra access token from your existing sign-in.
 }
 ```
 
-`tenantId` is optional. The token comes from `DefaultAzureCredential`. On a developer machine, run
-`az login`. The tool never opens a browser.
+`tenantId` is optional. The token comes from `DefaultAzureCredential`, so on a developer machine run
+`az login`. The tool never opens a browser. `-v` shows which credential supplied the token.
 
-**Wrong tenant (401 `InvalidAuthenticationTokenTenant`):** Visual Studio is tried before the Azure CLI, so
-its account wins. Set `tenantId`, or use only the CLI:
+**Wrong tenant:** Visual Studio's sign-in is tried before the Azure CLI's. If it is for another tenant, the API
+answers 401 `InvalidAuthenticationTokenTenant` and the tool prints a hint. Set `tenantId`, or use only the CLI:
 
 ```bash
 AZURE_TOKEN_CREDENTIALS=AzureCliCredential dotnet http-file MyApi.http --name getToDos --env dev
 ```
-
-After such a 401 on a request that used `EntraAccessToken`, the tool prints a hint on stderr that names
-`tenantId`. `-v` shows which credential supplied the token.

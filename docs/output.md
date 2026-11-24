@@ -9,26 +9,29 @@
 | `headers` | `--show headers` | Status line and response headers. |
 | `status` | `--show status` | Status line only. |
 
-Status lines, warnings and errors go to stderr when stdout carries the body.
+Warnings and errors go to stderr. In `body` mode the status line goes there too, so stdout holds only the body.
 
 In a terminal, the status line is coloured, header names are teal and the request line of `full` is bold. The
-body is plain. Colour is off when output is redirected or `NO_COLOR` is set.
+body is plain. Colour is off when `NO_COLOR` is set.
 
-A request that the selected request refers to prints a one-line summary (`→ name  GET url  200 OK  12 ms`).
-With `-v` that line is left out, because the `-v` log already has a line for each exchange.
+Text output shows control characters and bidirectional overrides as their codes (`\x1B`, `‮`). `body`
+mode writes the bytes as received.
 
-`-v` logs to stderr: files read, the environment, the request plan, each exchange, and for Entra tokens the scope,
-tenant, expiry and credential. It never logs a token or a secret-provider value (shown as `***`), and
-combines with `--show`.
+Each request that the selected request depends on prints a one-line summary
+(`→ name  GET url  200 OK  12 ms`), except under `-v`, whose log already has a line for each exchange.
+
+`-v` logs to stderr: files read, the environment, the request plan, each exchange, the scope, tenant and
+expiry of Entra tokens, and the Azure credential used. It combines with `--show`.
 
 ## Masking
 
-- Masking covers what the tool prints about the request it built: the request line, request headers, the
-  line for each dependency, warnings, errors and the `-v` log. Values from a secret provider show as `***`, and
-  `Authorization` as `Bearer ***`.
-- The response is shown as the server sent it: status line, headers and body. Keep output out of CI logs if
-  the server may echo a token. In a terminal, control characters and bidirectional overrides show as their
-  codes (`\x1B`, `\u202E`); `body` mode writes the bytes as received.
-- A redirect location is shown as the server sent it, unless it takes parts of the request URL (a relative
-  location, or one that takes the request's `#fragment`). Then it is masked.
-- Values from `.user` files, `$dotenv`, `$processEnv` and `--var` are not masked.
+- The tool masks only what it prints about the request it built: the request line, request headers,
+  dependency lines, warnings, errors and the `-v` log.
+- Values from a secret provider show as `***`. `Authorization` and `Proxy-Authorization` show as their scheme
+  and `***` (`Bearer ***`), and `Cookie` as `***`, wherever the value came from.
+- Literal values in an environment file or its `.user` file, `--var`, `$dotenv` and `$processEnv` are not
+  masked anywhere else, such as in the URL.
+- The response is never masked: the status line, headers and body are shown as the server sent them. If the
+  server may echo a token, keep the output out of CI logs.
+- A redirect location is shown as the server sent it. If it is relative or takes the request's `#fragment`,
+  it is built from the request URL and masked.
