@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace DotNetHttpFile;
 
 /// <summary>
@@ -7,8 +5,6 @@ namespace DotNetHttpFile;
 /// </summary>
 internal static class FileReadFailure
 {
-    private static readonly CompositeFormat s_fileReadFailedFormat = CompositeFormat.Parse(Resources.FileReadFailed);
-
     /// <summary>
     /// Whether <paramref name="exception"/> is what a file read throws when the file cannot be read.
     /// </summary>
@@ -23,6 +19,6 @@ internal static class FileReadFailure
     {
         ArgumentNullException.ThrowIfNull(exception);
 
-        return new HttpFileException(Messages.Format(s_fileReadFailedFormat, exception.Message), exception);
+        return new HttpFileException(Messages.Format(Resources.FileReadFailed, exception.Message), exception);
     }
 }

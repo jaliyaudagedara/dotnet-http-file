@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text;
 using System.Text.RegularExpressions;
 using Azure;
 using Azure.Core;
@@ -26,24 +25,6 @@ internal sealed partial class AzureKeyVaultProvider(
     private const string SecretNameField = "secretName";
     private const char ResourceIdSeparator = '/';
     private const int NoResponseStatus = 0;
-
-    private static readonly CompositeFormat s_keyVaultForbiddenFormat =
-        CompositeFormat.Parse(Resources.KeyVaultForbidden);
-
-    private static readonly CompositeFormat s_keyVaultInvalidResourceIdFormat =
-        CompositeFormat.Parse(Resources.KeyVaultInvalidResourceId);
-
-    private static readonly CompositeFormat s_keyVaultRequestFailedFormat =
-        CompositeFormat.Parse(Resources.KeyVaultRequestFailed);
-
-    private static readonly CompositeFormat s_keyVaultSecretNotFoundFormat =
-        CompositeFormat.Parse(Resources.KeyVaultSecretNotFound);
-
-    private static readonly CompositeFormat s_keyVaultSignInFailedFormat =
-        CompositeFormat.Parse(Resources.KeyVaultSignInFailed);
-
-    private static readonly CompositeFormat s_keyVaultUnreachableFormat =
-        CompositeFormat.Parse(Resources.KeyVaultUnreachable);
 
     public string Name => ProviderName;
 
@@ -97,7 +78,7 @@ internal sealed partial class AzureKeyVaultProvider(
             // CredentialUnavailableException derives from AuthenticationFailedException, so this covers both.
             throw new HttpFileException(
                 Messages.Format(
-                    s_keyVaultSignInFailedFormat,
+                    Resources.KeyVaultSignInFailed,
                     request.VariableName,
                     vaultName,
                     secretName,
@@ -124,7 +105,7 @@ internal sealed partial class AzureKeyVaultProvider(
         string vaultName = resourceId[(resourceId.LastIndexOf(ResourceIdSeparator) + 1)..];
         if (!VaultNamePattern.IsMatch(vaultName))
         {
-            throw new HttpFileException(Messages.Format(s_keyVaultInvalidResourceIdFormat, variableName));
+            throw new HttpFileException(Messages.Format(Resources.KeyVaultInvalidResourceId, variableName));
         }
 
         return vaultName;
@@ -133,12 +114,12 @@ internal sealed partial class AzureKeyVaultProvider(
     // The service's own message can echo request details, so only the status reaches the user.
     private static string RequestFailedMessage(int status, string variableName, string vaultName, string secretName)
     {
-        CompositeFormat format = status switch
+        string format = status switch
         {
-            (int)HttpStatusCode.NotFound => s_keyVaultSecretNotFoundFormat,
-            (int)HttpStatusCode.Forbidden => s_keyVaultForbiddenFormat,
-            NoResponseStatus => s_keyVaultUnreachableFormat,
-            _ => s_keyVaultRequestFailedFormat,
+            (int)HttpStatusCode.NotFound => Resources.KeyVaultSecretNotFound,
+            (int)HttpStatusCode.Forbidden => Resources.KeyVaultForbidden,
+            NoResponseStatus => Resources.KeyVaultUnreachable,
+            _ => Resources.KeyVaultRequestFailed,
         };
 
         return Messages.Format(format, variableName, vaultName, secretName, status);

@@ -16,9 +16,6 @@ internal sealed partial record Template
     private const string RequestSource = "request";
     private const string BodyPart = "body";
 
-    private static readonly CompositeFormat s_invalidExpressionFormat =
-        CompositeFormat.Parse(Resources.InvalidExpression);
-
     // Private, and without init accessors, so that only Parse can pair segments with their offsets.
     private Template(string raw, IReadOnlyList<TemplateSegment> segments, IReadOnlyList<int> segmentOffsets)
     {
@@ -249,7 +246,7 @@ internal sealed partial record Template
     }
 
     private static HttpFileException InvalidExpression(string expression, int offset) =>
-        new(Messages.Format(s_invalidExpressionFormat, expression))
+        new(Messages.Format(Resources.InvalidExpression, expression))
         {
             ExpressionOffset = offset,
         };

@@ -20,18 +20,6 @@ internal sealed class VariableResolver(
     SecretMask secretMask,
     IReadOnlyDictionary<string, string>? overrides = null)
 {
-    private static readonly CompositeFormat s_requestNotSentFormat =
-        CompositeFormat.Parse(Resources.RequestNotSent);
-
-    private static readonly CompositeFormat s_urlNotAbsoluteFormat =
-        CompositeFormat.Parse(Resources.UrlNotAbsolute);
-
-    private static readonly CompositeFormat s_variableNotDefinedFormat =
-        CompositeFormat.Parse(Resources.VariableNotDefined);
-
-    private static readonly CompositeFormat s_variableNotDefinedNoEnvironmentFormat =
-        CompositeFormat.Parse(Resources.VariableNotDefinedNoEnvironment);
-
     // Keyed by definition, not by name: a name can be defined again further down the file.
     private readonly Dictionary<FileVariable, FileVariableValue> _fileVariableValues =
         [with(ReferenceEqualityComparer.Instance)];
@@ -60,7 +48,7 @@ internal sealed class VariableResolver(
         if (!Uri.TryCreate(urlText, UriKind.Absolute, out Uri? url)
             || (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps))
         {
-            throw new HttpFileException(Messages.Format(s_urlNotAbsoluteFormat, displayUrl, request.Line));
+            throw new HttpFileException(Messages.Format(Resources.UrlNotAbsolute, displayUrl, request.Line));
         }
 
         List<KeyValuePair<string, string>> headers = [with(capacity: request.Headers.Count)];
@@ -199,7 +187,7 @@ internal sealed class VariableResolver(
     {
         if (!exchanges.TryGet(reference.RequestName, out HttpExchange? exchange))
         {
-            throw new HttpFileException(Messages.Format(s_requestNotSentFormat, reference.RequestName));
+            throw new HttpFileException(Messages.Format(Resources.RequestNotSent, reference.RequestName));
         }
 
         return ReferenceEvaluator.Evaluate(reference, exchange);
@@ -212,12 +200,12 @@ internal sealed class VariableResolver(
         if (environment.SelectedName is null && environment.AvailableNames.Count > 0)
         {
             return new HttpFileException(Messages.Format(
-                s_variableNotDefinedNoEnvironmentFormat,
+                Resources.VariableNotDefinedNoEnvironment,
                 name,
                 line,
                 string.Join(Messages.ListSeparator, environment.AvailableNames)));
         }
 
-        return new HttpFileException(Messages.Format(s_variableNotDefinedFormat, name, line));
+        return new HttpFileException(Messages.Format(Resources.VariableNotDefined, name, line));
     }
 }

@@ -1,5 +1,4 @@
 using System.Diagnostics.Tracing;
-using System.Text;
 using Azure.Core.Diagnostics;
 using DotNetHttpFile.Output;
 
@@ -13,9 +12,6 @@ internal static class AzureCredentialLog
     private const string IdentityEventSourceName = "Azure-Identity";
     private const string CredentialSelectedEventName = "DefaultAzureCredentialCredentialSelected";
     private const char NamespaceSeparator = '.';
-
-    private static readonly CompositeFormat s_verboseCredentialSelectedFormat =
-        CompositeFormat.Parse(Resources.VerboseCredentialSelected);
 
     /// <summary>
     /// Starts writing the credential that DefaultAzureCredential selects to <paramref name="log"/>. Dispose the
@@ -45,7 +41,7 @@ internal static class AzureCredentialLog
                     eventData.Payload);
                 if (credentialName is not null)
                 {
-                    log.Write(Messages.Format(s_verboseCredentialSelectedFormat, credentialName));
+                    log.Write(Messages.Format(Resources.VerboseCredentialSelected, credentialName));
                 }
             },
             EventLevel.Informational);

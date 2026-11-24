@@ -11,21 +11,6 @@ internal static class RequestMessageBuilder
 
     private static readonly SearchValues<char> s_lineBreakCharacters = SearchValues.Create("\r\n\0");
 
-    private static readonly CompositeFormat s_contentHeaderWithoutBodyFormat =
-        CompositeFormat.Parse(Resources.ContentHeaderWithoutBody);
-
-    private static readonly CompositeFormat s_droppedContentTypeFormat =
-        CompositeFormat.Parse(Resources.DroppedContentType);
-
-    private static readonly CompositeFormat s_headerNotSendableFormat =
-        CompositeFormat.Parse(Resources.HeaderNotSendable);
-
-    private static readonly CompositeFormat s_headerValueHasLineBreakFormat =
-        CompositeFormat.Parse(Resources.HeaderValueHasLineBreak);
-
-    private static readonly CompositeFormat s_unsupportedHttpVersionFormat =
-        CompositeFormat.Parse(Resources.UnsupportedHttpVersion);
-
     /// <summary>
     /// Builds the message that sends <paramref name="request"/>. The caller disposes it.
     /// </summary>
@@ -94,7 +79,7 @@ internal static class RequestMessageBuilder
             "HTTP/1.0" => HttpVersion.Version10,
             "HTTP/2" or "HTTP/2.0" => HttpVersion.Version20,
             "HTTP/3" or "HTTP/3.0" => HttpVersion.Version30,
-            _ => throw new HttpFileException(Messages.Format(s_unsupportedHttpVersionFormat, httpVersion)),
+            _ => throw new HttpFileException(Messages.Format(Resources.UnsupportedHttpVersion, httpVersion)),
         };
 
     private static void AddHeaders(
@@ -115,7 +100,7 @@ internal static class RequestMessageBuilder
             // Nothing below validates the value, so a line break in it would go out as a header of its own.
             if (value.AsSpan().ContainsAny(s_lineBreakCharacters))
             {
-                throw new HttpFileException(Messages.Format(s_headerValueHasLineBreakFormat, name, line));
+                throw new HttpFileException(Messages.Format(Resources.HeaderValueHasLineBreak, name, line));
             }
 
             if (message.Headers.TryAddWithoutValidation(name, value))
@@ -133,17 +118,17 @@ internal static class RequestMessageBuilder
                 // Visual Studio sends no Content-Type without a body and does not warn, so neither does this.
                 if (HeaderNames.Is(request.Headers[index], HeaderNames.ContentType))
                 {
-                    log?.Invoke(Messages.Format(s_droppedContentTypeFormat, line));
+                    log?.Invoke(Messages.Format(Resources.DroppedContentType, line));
                 }
                 else
                 {
-                    warnings.Add(Messages.Format(s_contentHeaderWithoutBodyFormat, name, line));
+                    warnings.Add(Messages.Format(Resources.ContentHeaderWithoutBody, name, line));
                 }
 
                 continue;
             }
 
-            throw new HttpFileException(Messages.Format(s_headerNotSendableFormat, name, line));
+            throw new HttpFileException(Messages.Format(Resources.HeaderNotSendable, name, line));
         }
     }
 }

@@ -1,12 +1,7 @@
-using System.Text;
-
 namespace DotNetHttpFile.Secrets;
 
 internal sealed class SecretProviderRegistry(IEnumerable<ISecretProvider> providers)
 {
-    private static readonly CompositeFormat s_unknownSecretProviderFormat =
-        CompositeFormat.Parse(Resources.UnknownSecretProvider);
-
     private readonly Dictionary<string, ISecretProvider> _providers =
         providers.ToDictionary(provider => provider.Name, StringComparer.Ordinal);
 
@@ -26,7 +21,7 @@ internal sealed class SecretProviderRegistry(IEnumerable<ISecretProvider> provid
         }
 
         throw new HttpFileException(Messages.Format(
-            s_unknownSecretProviderFormat,
+            Resources.UnknownSecretProvider,
             variableName,
             providerName,
             string.Join(Messages.ListSeparator, _providers.Keys.Order(StringComparer.Ordinal))));

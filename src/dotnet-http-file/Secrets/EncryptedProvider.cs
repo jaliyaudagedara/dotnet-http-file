@@ -10,15 +10,6 @@ internal sealed class EncryptedProvider : ISecretProvider
 
     private const string ValueField = "value";
 
-    private static readonly CompositeFormat s_encryptedCannotDecryptFormat =
-        CompositeFormat.Parse(Resources.EncryptedCannotDecrypt);
-
-    private static readonly CompositeFormat s_encryptedInvalidBase64Format =
-        CompositeFormat.Parse(Resources.EncryptedInvalidBase64);
-
-    private static readonly CompositeFormat s_encryptedWindowsOnlyFormat =
-        CompositeFormat.Parse(Resources.EncryptedWindowsOnly);
-
     public string Name => ProviderName;
 
     public Task<string> ResolveAsync(SecretRequest request, CancellationToken cancellationToken = default)
@@ -41,7 +32,7 @@ internal sealed class EncryptedProvider : ISecretProvider
         string value = request.GetRequiredString(ProviderName, ValueField);
         if (!OperatingSystem.IsWindows())
         {
-            throw new HttpFileException(Messages.Format(s_encryptedWindowsOnlyFormat, request.VariableName));
+            throw new HttpFileException(Messages.Format(Resources.EncryptedWindowsOnly, request.VariableName));
         }
 
         return Unprotect(request.VariableName, value);
@@ -63,11 +54,11 @@ internal sealed class EncryptedProvider : ISecretProvider
         }
         catch (FormatException exception)
         {
-            throw new HttpFileException(Messages.Format(s_encryptedInvalidBase64Format, variableName), exception);
+            throw new HttpFileException(Messages.Format(Resources.EncryptedInvalidBase64, variableName), exception);
         }
         catch (CryptographicException exception)
         {
-            throw new HttpFileException(Messages.Format(s_encryptedCannotDecryptFormat, variableName), exception);
+            throw new HttpFileException(Messages.Format(Resources.EncryptedCannotDecrypt, variableName), exception);
         }
     }
 }

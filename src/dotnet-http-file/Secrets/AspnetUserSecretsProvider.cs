@@ -1,6 +1,5 @@
 using System.Buffers;
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Xml;
@@ -30,27 +29,6 @@ internal sealed class AspnetUserSecretsProvider(string userSecretsRoot) : ISecre
         XmlResolver = null,
     };
 
-    private static readonly CompositeFormat s_userSecretsFileNotFoundFormat =
-        CompositeFormat.Parse(Resources.UserSecretsFileNotFound);
-
-    private static readonly CompositeFormat s_userSecretsInvalidFileFormat =
-        CompositeFormat.Parse(Resources.UserSecretsInvalidFile);
-
-    private static readonly CompositeFormat s_userSecretsInvalidProjectFormat =
-        CompositeFormat.Parse(Resources.UserSecretsInvalidProject);
-
-    private static readonly CompositeFormat s_userSecretsInvalidUserSecretsIdFormat =
-        CompositeFormat.Parse(Resources.UserSecretsInvalidUserSecretsId);
-
-    private static readonly CompositeFormat s_userSecretsNoProjectFormat =
-        CompositeFormat.Parse(Resources.UserSecretsNoProject);
-
-    private static readonly CompositeFormat s_userSecretsNoUserSecretsIdFormat =
-        CompositeFormat.Parse(Resources.UserSecretsNoUserSecretsId);
-
-    private static readonly CompositeFormat s_userSecretsSecretNotFoundFormat =
-        CompositeFormat.Parse(Resources.UserSecretsSecretNotFound);
-
     public string Name => ProviderName;
 
     /// <summary>
@@ -73,7 +51,7 @@ internal sealed class AspnetUserSecretsProvider(string userSecretsRoot) : ISecre
 
         string secretName = request.GetRequiredString(ProviderName, SecretNameField);
         string projectFilePath = ProjectLocator.FindProjectFile(request.EnvironmentFileDirectory)
-            ?? throw Failure(s_userSecretsNoProjectFormat, request.VariableName, request.EnvironmentFileDirectory);
+            ?? throw Failure(Resources.UserSecretsNoProject, request.VariableName, request.EnvironmentFileDirectory);
 
         string userSecretsId = await ReadUserSecretsIdAsync(request.VariableName, projectFilePath, cancellationToken)
             .ConfigureAwait(false);
@@ -84,12 +62,12 @@ internal sealed class AspnetUserSecretsProvider(string userSecretsRoot) : ISecre
         Dictionary<string, string> values = [with(StringComparer.OrdinalIgnoreCase)];
         if (!TryFlatten(values, string.Empty, secrets))
         {
-            throw Failure(s_userSecretsInvalidFileFormat, request.VariableName, secretsFilePath);
+            throw Failure(Resources.UserSecretsInvalidFile, request.VariableName, secretsFilePath);
         }
 
         return values.TryGetValue(secretName, out string? value)
             ? value
-            : throw Failure(s_userSecretsSecretNotFoundFormat, request.VariableName, secretName, secretsFilePath);
+            : throw Failure(Resources.UserSecretsSecretNotFound, request.VariableName, secretName, secretsFilePath);
     }
 
     private static async Task<string> ReadUserSecretsIdAsync(
@@ -116,7 +94,7 @@ internal sealed class AspnetUserSecretsProvider(string userSecretsRoot) : ISecre
         }
         catch (XmlException exception)
         {
-            throw Failure(s_userSecretsInvalidProjectFormat, exception, variableName, projectFilePath);
+            throw Failure(Resources.UserSecretsInvalidProject, exception, variableName, projectFilePath);
         }
 
         // Matched by local name because older project files put every element in the MSBuild namespace.
@@ -128,13 +106,13 @@ internal sealed class AspnetUserSecretsProvider(string userSecretsRoot) : ISecre
 
         if (string.IsNullOrEmpty(userSecretsId))
         {
-            throw Failure(s_userSecretsNoUserSecretsIdFormat, variableName, projectFilePath);
+            throw Failure(Resources.UserSecretsNoUserSecretsId, variableName, projectFilePath);
         }
 
         if (userSecretsId is CurrentDirectoryName or ParentDirectoryName
             || userSecretsId.AsSpan().ContainsAny(s_invalidUserSecretsIdCharacters))
         {
-            throw Failure(s_userSecretsInvalidUserSecretsIdFormat, variableName, projectFilePath);
+            throw Failure(Resources.UserSecretsInvalidUserSecretsId, variableName, projectFilePath);
         }
 
         return userSecretsId;
@@ -152,7 +130,7 @@ internal sealed class AspnetUserSecretsProvider(string userSecretsRoot) : ISecre
         }
         catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
-            throw Failure(s_userSecretsFileNotFoundFormat, exception, variableName, secretsFilePath);
+            throw Failure(Resources.UserSecretsFileNotFound, exception, variableName, secretsFilePath);
         }
         catch (Exception exception) when (FileReadFailure.IsFileReadFailure(exception))
         {
@@ -168,10 +146,10 @@ internal sealed class AspnetUserSecretsProvider(string userSecretsRoot) : ISecre
         }
         catch (JsonException exception)
         {
-            throw Failure(s_userSecretsInvalidFileFormat, exception, variableName, secretsFilePath);
+            throw Failure(Resources.UserSecretsInvalidFile, exception, variableName, secretsFilePath);
         }
 
-        throw Failure(s_userSecretsInvalidFileFormat, variableName, secretsFilePath);
+        throw Failure(Resources.UserSecretsInvalidFile, variableName, secretsFilePath);
     }
 
     // Joins nested names and array indexes with ':'. Returns false when two values end up under the same
@@ -211,11 +189,11 @@ internal sealed class AspnetUserSecretsProvider(string userSecretsRoot) : ISecre
     private static string CombineKey(string key, string name) =>
         key.Length == 0 ? name : key + KeySeparator + name;
 
-    private static HttpFileException Failure(CompositeFormat format, params ReadOnlySpan<object?> arguments) =>
+    private static HttpFileException Failure(string format, params ReadOnlySpan<object?> arguments) =>
         new(Messages.Format(format, arguments));
 
     private static HttpFileException Failure(
-        CompositeFormat format,
+        string format,
         Exception innerException,
         params ReadOnlySpan<object?> arguments) =>
         new(Messages.Format(format, arguments), innerException);

@@ -1,4 +1,3 @@
-using System.Text;
 using DotNetHttpFile.Parsing;
 using DotNetHttpFile.Templates;
 
@@ -7,12 +6,6 @@ namespace DotNetHttpFile.Resolution;
 internal static class DependencyPlanner
 {
     private const string CycleSeparator = " -> ";
-
-    private static readonly CompositeFormat s_requestDependencyCycleFormat =
-        CompositeFormat.Parse(Resources.RequestDependencyCycle);
-
-    private static readonly CompositeFormat s_requestNotFoundFormat =
-        CompositeFormat.Parse(Resources.RequestNotFound);
 
     /// <summary>
     /// Lists the requests to send for <paramref name="target"/>: every named request it references, directly,
@@ -61,7 +54,7 @@ internal static class DependencyPlanner
             if (!requestsByName.TryGetValue(reference.RequestName, out RequestDefinition? dependency))
             {
                 throw new HttpFileException(Messages.Format(
-                    s_requestNotFoundFormat,
+                    Resources.RequestNotFound,
                     reference.RequestName,
                     reference.Line));
             }
@@ -72,7 +65,7 @@ internal static class DependencyPlanner
                 IEnumerable<string?> names = path.Skip(cycleStart).Append(dependency).Select(step => step.Name);
 
                 throw new HttpFileException(Messages.Format(
-                    s_requestDependencyCycleFormat,
+                    Resources.RequestDependencyCycle,
                     string.Join(CycleSeparator, names)));
             }
 

@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using DotNetHttpFile.Environments;
 using DotNetHttpFile.Templates;
 
@@ -34,36 +33,6 @@ internal sealed class DynamicVariables(
     private const string LocalRfc1123Format = "ddd, dd MMM yyyy HH:mm:ss zz";
     private const int DaysPerWeek = 7;
 
-    private static readonly CompositeFormat s_dotEnvFileNotFoundFormat =
-        CompositeFormat.Parse(Resources.DotEnvFileNotFound);
-
-    private static readonly CompositeFormat s_dotEnvVariableNotDefinedFormat =
-        CompositeFormat.Parse(Resources.DotEnvVariableNotDefined);
-
-    private static readonly CompositeFormat s_dynamicVariableOffsetOutOfRangeFormat =
-        CompositeFormat.Parse(Resources.DynamicVariableOffsetOutOfRange);
-
-    private static readonly CompositeFormat s_environmentVariableNotSetFormat =
-        CompositeFormat.Parse(Resources.EnvironmentVariableNotSet);
-
-    private static readonly CompositeFormat s_invalidDynamicVariableArgumentsFormat =
-        CompositeFormat.Parse(Resources.InvalidDynamicVariableArguments);
-
-    private static readonly CompositeFormat s_invalidDynamicVariableDateFormatFormat =
-        CompositeFormat.Parse(Resources.InvalidDynamicVariableDateFormat);
-
-    private static readonly CompositeFormat s_invalidDynamicVariableIntegerFormat =
-        CompositeFormat.Parse(Resources.InvalidDynamicVariableInteger);
-
-    private static readonly CompositeFormat s_invalidDynamicVariableOffsetFormat =
-        CompositeFormat.Parse(Resources.InvalidDynamicVariableOffset);
-
-    private static readonly CompositeFormat s_invalidDynamicVariableRangeFormat =
-        CompositeFormat.Parse(Resources.InvalidDynamicVariableRange);
-
-    private static readonly CompositeFormat s_unknownDynamicVariableFormat =
-        CompositeFormat.Parse(Resources.UnknownDynamicVariable);
-
     /// <summary>
     /// Produces the value of a <c>{{$function arguments}}</c> expression.
     /// </summary>
@@ -85,7 +54,7 @@ internal sealed class DynamicVariables(
             LocalDateTimeFunction => GetDateTime(LocalDateTimeFunction, LocalDateTimeSyntax, arguments, isLocal: true),
             TimestampFunction => GetTimestamp(arguments),
             GuidFunction => GetGuid(arguments),
-            _ => throw new HttpFileException(Messages.Format(s_unknownDynamicVariableFormat, segment.Function)),
+            _ => throw new HttpFileException(Messages.Format(Resources.UnknownDynamicVariable, segment.Function)),
         };
     }
 
@@ -113,7 +82,7 @@ internal sealed class DynamicVariables(
     {
         if (!TryParseInteger(text, out int value))
         {
-            throw new HttpFileException(Messages.Format(s_invalidDynamicVariableIntegerFormat, function, text));
+            throw new HttpFileException(Messages.Format(Resources.InvalidDynamicVariableInteger, function, text));
         }
 
         return value;
@@ -147,23 +116,23 @@ internal sealed class DynamicVariables(
         catch (ArgumentOutOfRangeException exception)
         {
             throw new HttpFileException(
-                Messages.Format(s_dynamicVariableOffsetOutOfRangeFormat, function, amountText, unit),
+                Messages.Format(Resources.DynamicVariableOffsetOutOfRange, function, amountText, unit),
                 exception);
         }
     }
 
     private static HttpFileException InvalidOffset(string function, string amountText, string unit) =>
-        new(Messages.Format(s_invalidDynamicVariableOffsetFormat, function, amountText, unit));
+        new(Messages.Format(Resources.InvalidDynamicVariableOffset, function, amountText, unit));
 
     private static HttpFileException InvalidArguments(string function, string syntax) =>
-        new(Messages.Format(s_invalidDynamicVariableArgumentsFormat, function, syntax));
+        new(Messages.Format(Resources.InvalidDynamicVariableArguments, function, syntax));
 
     private string GetProcessEnv(IReadOnlyList<string> arguments)
     {
         string name = RequireName(ProcessEnvFunction, ProcessEnvSyntax, arguments);
 
         return getEnvironmentVariable(name)
-            ?? throw new HttpFileException(Messages.Format(s_environmentVariableNotSetFormat, name));
+            ?? throw new HttpFileException(Messages.Format(Resources.EnvironmentVariableNotSet, name));
     }
 
     private async Task<string> GetDotEnvAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
@@ -173,12 +142,12 @@ internal sealed class DynamicVariables(
 
         if (dotEnv.Values is null)
         {
-            throw new HttpFileException(Messages.Format(s_dotEnvFileNotFoundFormat, name, dotEnv.Path));
+            throw new HttpFileException(Messages.Format(Resources.DotEnvFileNotFound, name, dotEnv.Path));
         }
 
         if (!dotEnv.Values.TryGetValue(name, out string? value))
         {
-            throw new HttpFileException(Messages.Format(s_dotEnvVariableNotDefinedFormat, name, dotEnv.Path));
+            throw new HttpFileException(Messages.Format(Resources.DotEnvVariableNotDefined, name, dotEnv.Path));
         }
 
         return value;
@@ -201,7 +170,7 @@ internal sealed class DynamicVariables(
         if (min > max)
         {
             throw new HttpFileException(Messages.Format(
-                s_invalidDynamicVariableRangeFormat,
+                Resources.InvalidDynamicVariableRange,
                 RandomIntFunction,
                 arguments[0],
                 arguments[1]));
@@ -243,7 +212,7 @@ internal sealed class DynamicVariables(
         catch (FormatException exception)
         {
             throw new HttpFileException(
-                Messages.Format(s_invalidDynamicVariableDateFormatFormat, function, format),
+                Messages.Format(Resources.InvalidDynamicVariableDateFormat, function, format),
                 exception);
         }
     }
