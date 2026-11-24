@@ -118,6 +118,21 @@ internal sealed class ResponseRenderer(ConsoleStreams console, SecretMask secret
     }
 
     /// <summary>
+    /// Writes <paramref name="message"/> to standard error as a warning about <paramref name="line"/> of the file
+    /// at <paramref name="path"/>, in the <c>file(line): warning: message</c> form of compiler output.
+    /// </summary>
+    public void RenderWarning(string path, int line, string message)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(message);
+
+        WriteMaskedLines(
+            console.Error,
+            Messages.Format(Resources.OutputFileWarning, path, line, message),
+            s_warningStyle);
+    }
+
+    /// <summary>
     /// Writes <paramref name="message"/> to standard error as an error.
     /// </summary>
     public void RenderError(string message)

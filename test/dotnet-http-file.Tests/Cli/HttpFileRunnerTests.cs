@@ -619,6 +619,283 @@ public sealed class HttpFileRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_List_PrintsTheNameElseTheTitleOfEachRequestInFileOrder()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            """
+            ### Create a todo
+            # @name createToDo
+            POST http://localhost/todos
+
+            ###
+            # @name getToDo
+            GET http://localhost/todos/1
+
+            ###
+            GET http://localhost/unnamed
+
+            ### List all todos
+            GET http://localhost/todos
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { List = true });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(["createToDo", "getToDo", "List all todos"], harness.OutputLines);
+        Assert.Equal(
+            [$"{path}(10): warning: Request has no name or title."],
+            harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_ListTitleSharedIgnoringCase_LeavesEachOutWithAWarning()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            """
+            ### Get
+            GET http://localhost/a
+
+            ### get
+            GET http://localhost/b
+
+            ###
+            # @name other
+            GET http://localhost/c
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { List = true });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(["other"], harness.OutputLines);
+        Assert.Equal(
+            [
+                $"{path}(2): warning: Title 'Get' is also used at line 5.",
+                $"{path}(5): warning: Title 'get' is also used at line 2.",
+            ],
+            harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_ListTitleSharedByThree_NamesTheOtherTwoInEachWarning()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            """
+            ### Shared
+            GET http://localhost/a
+
+            ### Shared
+            GET http://localhost/b
+
+            ### shared
+            GET http://localhost/c
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { List = true });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Empty(harness.OutputLines);
+        Assert.Equal(
+            [
+                $"{path}(2): warning: Title 'Shared' is also used at lines 5, 8.",
+                $"{path}(5): warning: Title 'Shared' is also used at lines 2, 8.",
+                $"{path}(8): warning: Title 'shared' is also used at lines 2, 5.",
+            ],
+            harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_ListTitleSharedWithANamedRequest_ListsTheNameAndWarnsAboutTheOther()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            """
+            ### Shared
+            # @name a
+            GET http://localhost/a
+
+            ### Shared
+            GET http://localhost/b
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { List = true });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(["a"], harness.OutputLines);
+        Assert.Equal([$"{path}(6): warning: Title 'Shared' is also used at line 3."], harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_ListTitleThatIsAnotherRequestsName_LeavesTheRequestOutWithAWarning()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            """
+            ### alpha
+            GET http://localhost/a
+
+            ###
+            # @name alpha
+            GET http://localhost/b
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { List = true });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(["alpha"], harness.OutputLines);
+        Assert.Equal(
+            [$"{path}(2): warning: Title 'alpha' is the name of the request at line 6."],
+            harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_ListCancelled_ReturnsCancelled()
+    {
+        using CancellationTokenSource cancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        using Harness harness = new() { CancellationToken = cancellation.Token };
+        string path = await harness.WriteHttpFileAsync("GET http://localhost/a");
+        await cancellation.CancelAsync();
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { List = true });
+
+        Assert.Equal(ExitCodes.Cancelled, exitCode);
+        Assert.Equal(["error: Cancelled."], harness.ErrorLines);
+        Assert.Empty(harness.OutputLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_ListWithEnvironmentVariablesAndProviders_SendsAndResolvesNothing()
+    {
+        using Harness harness = new();
+        harness.CreateProviders = _ => throw new InvalidOperationException("Providers were created.");
+        await harness.WriteFileAsync(
+            EnvironmentFileLocator.FileName,
+            """{ "dev": { "token": { "provider": "EntraAccessToken" } } }""");
+        string path = await harness.WriteHttpFileAsync(
+            """
+            # @name getToDo
+            GET http://localhost/{{undefined}}
+            Authorization: Bearer {{token}}
+            """);
+        RunOptions options = new(path)
+        {
+            List = true,
+            EnvironmentName = "missing",
+            Variables = new Dictionary<string, string>
+            {
+                ["unused"] = "1",
+            },
+            ForcedMode = OutputMode.Full,
+            Insecure = true,
+        };
+
+        int exitCode = await harness.RunAsync(options);
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(["getToDo"], harness.OutputLines);
+        Assert.Empty(harness.ErrorLines);
+        Assert.Equal(0, harness.HandlersCreated);
+    }
+
+    [Fact]
+    public async Task RunAsync_ListOutputRedirected_PrintsTheSameLines()
+    {
+        using Harness harness = new() { IsOutputRedirected = true };
+        string path = await harness.WriteHttpFileAsync(
+            """
+            # @name getToDo
+            GET http://localhost/todos/1
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { List = true });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal(["getToDo"], harness.OutputLines);
+        Assert.Equal(0, harness.StandardOutput.Length);
+    }
+
+    [Fact]
+    public async Task RunAsync_ListTitleWithMarkup_PrintsItLiterally()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            """
+            ### [red]Get[/] a todo
+            GET http://localhost/todos/1
+            """);
+
+        await harness.RunAsync(new RunOptions(path) { List = true });
+
+        Assert.Equal(["[red]Get[/] a todo"], harness.OutputLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_ListNoRequests_PrintsNothing()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync("@host = http://localhost");
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { List = true });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Empty(harness.Output.Output);
+        Assert.Empty(harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_ListParseError_ReturnsNotSent()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            """
+            # @name login
+            GET http://localhost/a
+
+            ###
+            # @name login
+            GET http://localhost/b
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { List = true });
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal(["error: Duplicate request name 'login' on lines 2 and 6."], harness.ErrorLines);
+        Assert.Empty(harness.Output.Output);
+    }
+
+    [Fact]
+    public async Task RunAsync_ListMissingFile_ReturnsNotSentNamingTheFile()
+    {
+        using Harness harness = new();
+        string path = Path.Combine(harness.Directory.DirectoryPath, HttpFileName);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { List = true });
+
+        Assert.Equal(ExitCodes.NotSent, exitCode);
+        Assert.Equal([$"error: File '{path}' was not found."], harness.ErrorLines);
+    }
+
+    [Fact]
+    public async Task RunAsync_ListVerbose_LogsOnlyTheHttpFile()
+    {
+        using Harness harness = new();
+        string path = await harness.WriteHttpFileAsync(
+            """
+            # @name getToDo
+            GET http://localhost/todos/1
+            """);
+
+        int exitCode = await harness.RunAsync(new RunOptions(path) { List = true, Verbose = true });
+
+        Assert.Equal(ExitCodes.Success, exitCode);
+        Assert.Equal([$"verbose: HTTP file: {Path.GetFullPath(path)}"], harness.ErrorLines);
+        Assert.Equal(["getToDo"], harness.OutputLines);
+    }
+
+    [Fact]
     public async Task RunAsync_ProviderVariable_UsesEnvironmentAndMasks()
     {
         await using EchoServer server = await EchoServer.StartAsync(TestContext.Current.CancellationToken);

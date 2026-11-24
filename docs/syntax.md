@@ -11,6 +11,9 @@ The tool reads the Visual Studio 2026 Insiders 18.13 `.http` syntax. See
 `--name` picks the request with that `# @name` (case-sensitive). If none has it, it picks the request whose
 `### <title>` matches, ignoring case. Two requests with that title are an error.
 
+`--list` prints the name, else the title, of each request that `--name` can select. It warns about the rest:
+a request with no name or title, a title another request also has, or a title that is another request's name.
+
 ## Request dependencies
 
 If the selected request uses `{{x.response...}}` or `{{x.request...}}`, request `x` is sent first, on every

@@ -14,6 +14,11 @@ internal sealed record RunOptions(string FilePath)
     public string? RequestName { get; init; }
 
     /// <summary>
+    /// True to print what <c>--name</c> accepts for each request instead of sending one (<c>--list</c>).
+    /// </summary>
+    public bool List { get; init; }
+
+    /// <summary>
     /// The environment given to <c>--env</c>, or null.
     /// </summary>
     public string? EnvironmentName { get; init; }

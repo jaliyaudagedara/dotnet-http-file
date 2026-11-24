@@ -41,6 +41,7 @@ setup; the Entra sample needs `az login`.
 | Option | Meaning |
 |---|---|
 | `-n`, `--name <name>` | The request to run, from `# @name <name>` or a `### <title>`. |
+| `--list` | Print the name, else the title, of each request `--name` can select, one per line, and send nothing. Warn about the rest. Can't be used with `--name`. |
 | `-e`, `--env <env>` | The environment in `http-client.env.json`. |
 | `-v`, `--verbose` | Log what the tool does to stderr: files read, requests, tokens acquired. Never logs a token or a secret-provider value. |
 | `--show <full\|body\|headers\|status>` | What to print. |
@@ -51,7 +52,7 @@ setup; the Entra sample needs `az login`.
 
 | Code | Meaning |
 |---|---|
-| 0 | 2xx response. |
+| 0 | 2xx response, or `--list` printed the requests. |
 | 1 | The server answered with a non-2xx status, for the request or a request it depends on, or the body could not be decoded. |
 | 2 | The request got no response: bad arguments, a parse error, an undefined variable, a secret provider failure, a network error, a timeout or an unexpected error. Dependencies may already have been sent. |
 | 130 | Cancelled with Ctrl+C. |

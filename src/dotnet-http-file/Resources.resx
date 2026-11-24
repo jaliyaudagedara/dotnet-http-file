@@ -348,6 +348,10 @@
     <value>error: {0}</value>
     <comment>{0} is the error message, which ends with its own punctuation.</comment>
   </data>
+  <data name="OutputFileWarning" xml:space="preserve">
+    <value>{0}({1}): warning: {2}</value>
+    <comment>The canonical file(line): warning: message form of compiler and MSBuild output; keep the punctuation. {0} is the path of the .http file as given, {1} the line number, {2} the warning message, which ends with its own punctuation. "warning" is not translated.</comment>
+  </data>
   <data name="OutputWarning" xml:space="preserve">
     <value>warning: {0}</value>
     <comment>{0} is the warning message, which ends with its own punctuation.</comment>
@@ -419,6 +423,30 @@
   <data name="NameOptionDescription" xml:space="preserve">
     <value>The request to run, as named by '# @name &lt;name&gt;' or titled by '### &lt;title&gt;' in the file.</value>
     <comment>The --help description of --name. # @name and ### are literal .http syntax and is not translated.</comment>
+  </data>
+  <data name="ListOptionDescription" xml:space="preserve">
+    <value>Prints the name, else the title, of each request that --name can select, one per line in file order, and sends nothing. Warns about the requests it leaves out.</value>
+    <comment>The --help description of --list. --name is a literal option name and is not translated. In the third person, like the other option descriptions that start with a verb.</comment>
+  </data>
+  <data name="ListRequestWithoutName" xml:space="preserve">
+    <value>Request has no name or title.</value>
+    <comment>Warning from --list about a request it leaves out, shown after the file and line.</comment>
+  </data>
+  <data name="ListTitleSharedWithOne" xml:space="preserve">
+    <value>Title '{0}' is also used at line {1}.</value>
+    <comment>Warning from --list, shown after the file and line of a request it leaves out because one other request has the same title. {0} is the title, compared ignoring case. {1} is the line number of the other request.</comment>
+  </data>
+  <data name="ListTitleSharedWithMany" xml:space="preserve">
+    <value>Title '{0}' is also used at lines {1}.</value>
+    <comment>Warning from --list, shown after the file and line of a request it leaves out because other requests have the same title. {0} is the title, compared ignoring case. {1} is the comma-separated list of the line numbers of the other requests.</comment>
+  </data>
+  <data name="ListTitleIsAName" xml:space="preserve">
+    <value>Title '{0}' is the name of the request at line {1}.</value>
+    <comment>Warning from --list about a request it leaves out, shown after the file and line. {0} is the title. {1} is the line number of the request whose # @name is that title.</comment>
+  </data>
+  <data name="ListOptionWithName" xml:space="preserve">
+    <value>--list can't be used with --name.</value>
+    <comment>--list and --name are literal option names and are not translated. Shown when both are given.</comment>
   </data>
   <data name="EnvOptionDescription" xml:space="preserve">
     <value>The environment in http-client.env.json to take variables from.</value>
